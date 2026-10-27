@@ -1,0 +1,8 @@
+{
+  "name": "ifa-koubo-film",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Film out/video.mp4 --muted"
+  }
+}

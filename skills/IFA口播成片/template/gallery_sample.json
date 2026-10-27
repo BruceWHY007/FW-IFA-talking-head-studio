@@ -1,0 +1,32 @@
+{
+  "_说明": "风格目录的示范内容：选题库 05《跨境财富第一，香港超过瑞士》（BCG《2026 全球财富报告》）。只用来展示六套风格长什么样，不是成片；人脸借工程里已剪好的原片。",
+  "masthead": {"series": "香港经济与金融", "episode": "香港跨境财富，为什么登顶"},
+  "speaker": {"name": "示范讲解人", "lines": ["复星财富 IFA"]},
+  "cover": {
+    "kicker": "BCG 全球财富报告",
+    "title": ["百年瑞士被超了", "香港凭什么"],
+    "number": {"value": "2.9", "unit": "万亿美元"},
+    "versus": {"left": {"label": "香港", "value": "10.7%"}, "right": {"label": "瑞士", "value": "7.6%"}, "win": 0},
+    "quote": {"text": "跨境财富第一，换人了。", "source": "BCG《2026 全球财富报告》"}
+  },
+  "cover_forms": {"A": "title", "B": "number", "C": "versus", "K1": "title", "K2": "number", "K3": "title"},
+  "cards": [
+    {"kind": "quote", "label": "报告原文要点", "text": "2025 年，香港跨境财富管理规模首次超过瑞士。", "hl": "首次超过瑞士", "source": "BCG《2026 全球财富报告》",
+     "caption": "把第一给了香港"},
+    {"kind": "compare", "title": "规模打平，差在增速", "items": [
+      {"label": "香港", "value": "10.7%", "note": "2025 年增速"}, {"label": "瑞士", "value": "7.6%", "note": "2025 年增速"}], "win": 0,
+     "source": "BCG《2026 全球财富报告》", "caption": "香港涨了 10.7%，瑞士 7.6%"},
+    {"kind": "chart", "title": "跨境财富管理规模（万亿美元）", "series": ["香港", "瑞士"],
+     "groups": [{"label": "2025", "values": [2.9, 2.9]}, {"label": "2030（预测）", "values": [4.6, 4.0], "pred": true}],
+     "source": "BCG《2026 全球财富报告》· 机构测算，2030 为预测", "caption": "到 2030 年，香港大概 4.6 万亿"},
+    {"kind": "list", "title": "香港跑得快，三件事接上了", "items": [
+      {"t": "钱从哪来", "d": "跨境财富约六成来自内地"}, {"t": "有地方去", "d": "119 宗新股，募资约 374 亿美元"}, {"t": "通道变宽", "d": "理财通个人额度提到 300 万"}],
+     "caption": "第三，通道在变宽"},
+    {"kind": "timeline", "title": "理财通的额度", "items": [
+      {"when": "1.0", "what": "个人额度 100 万"}, {"when": "2.0", "what": "提到 300 万人民币"}], "source": "选题库 05 口播稿",
+     "caption": "把个人额度从 100 万提到了 300 万"}
+  ],
+  "figure": {"kind": "number", "value": "3380", "unit": "家", "label": "单一家族办公室"},
+  "figure_caption": "单一家族办公室超过 3380 家",
+  "captions": ["两个数字摆在一起，挺有意思", "可 BCG 今年的报告"]
+}

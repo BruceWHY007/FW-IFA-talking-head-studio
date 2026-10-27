@@ -1,0 +1,406 @@
+{
+  "_说明": [
+    "AI 生成 B-roll 的渠道配置。默认 active 为 null：一律不调用，只出提示词卡（cards.md），拿去任意平台网页手动生成。",
+    "要接入：把下面某个渠道的 enabled 改成 true、active 写它的名字，把密钥放进环境变量（key_env 写的那个名字）。密钥永远不写进本文件。",
+    "放置位置：个人默认 ~/.config/ifa-koubo/gen_providers.json；某个工程单独用，放工程根目录（优先）。",
+    "模板占位：{key} {prompt} {model} {duration} {ratio} {task_id} 以及 capture 里抓到的任何变量。整串只有一个占位时保留原类型（数字还是数字）。",
+    "verified 写清核对日期与程度。接口会变（Sora 已于 2026-09-24 下线、Veo 3.1 于 2026-10-22 下线），接入前先对一遍官方文档。"
+  ],
+  "active": null,
+  "providers": {
+    "runninghub_app": {
+      "enabled": false,
+      "verified": "2026-10-22 端点与写法取自本机《向光而行》项目实际跑通的 rh.py（ai-app/run＋webappId＋nodeInfoList）；节点号按当时的应用，应用改版后要重查",
+      "notes": "AI 应用通道：普通级 key 调不了标准模型接口（错误码 1014）时走这条。webapp_id 预填的是「Seedance 2.0 Fast 全能生视频」，节点 21 是提示词/时长/比例/分辨率；节点 27 是首帧图（要先调 /task/openapi/upload 上传），纯文生是否可省需实测。RunningHub 偶发 SSL 中断，脚本会重试；大文件下载不走本地代理。",
+      "key_env": "RUNNINGHUB_API_KEY",
+      "webapp_id": "2065722002014564353",
+      "model": "seedance2-fast（RunningHub AI 应用）",
+      "duration_range": [
+        4,
+        15
+      ],
+      "submit": {
+        "method": "POST",
+        "url": "https://www.runninghub.cn/task/openapi/ai-app/run",
+        "headers": {
+          "Authorization": "Bearer {key}",
+          "Content-Type": "application/json",
+          "Host": "www.runninghub.cn"
+        },
+        "body": {
+          "webappId": "{webapp_id}",
+          "apiKey": "{key}",
+          "nodeInfoList": [
+            {
+              "nodeId": "21",
+              "fieldName": "prompt",
+              "fieldValue": "{prompt}"
+            },
+            {
+              "nodeId": "21",
+              "fieldName": "duration",
+              "fieldValue": "{duration_str}"
+            },
+            {
+              "nodeId": "21",
+              "fieldName": "ratio",
+              "fieldValue": "9:16"
+            },
+            {
+              "nodeId": "21",
+              "fieldName": "resolution",
+              "fieldValue": "720p"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "task_id": "data.taskId"
+      },
+      "poll": {
+        "method": "POST",
+        "url": "https://www.runninghub.cn/task/openapi/status",
+        "headers": {
+          "Authorization": "Bearer {key}",
+          "Content-Type": "application/json",
+          "Host": "www.runninghub.cn"
+        },
+        "body": {
+          "apiKey": "{key}",
+          "taskId": "{task_id}"
+        },
+        "status": "data",
+        "ok": [
+          "SUCCESS"
+        ],
+        "fail": [
+          "FAILED"
+        ]
+      },
+      "result": {
+        "method": "POST",
+        "url": "https://www.runninghub.cn/task/openapi/outputs",
+        "headers": {
+          "Authorization": "Bearer {key}",
+          "Content-Type": "application/json",
+          "Host": "www.runninghub.cn"
+        },
+        "body": {
+          "apiKey": "{key}",
+          "taskId": "{task_id}"
+        },
+        "video_url": "data.0.fileUrl"
+      }
+    },
+    "runninghub_workflow": {
+      "enabled": false,
+      "verified": "2026-10-22 按官方 apifox 文档核对端点与字段；nodeId/fieldName 每个工作流不同，必须自己填",
+      "notes": "自建工作流通道：先在网页把视频工作流手动跑通一次；工作流右上角数字是 nodeId，导出「Workflow API」看 inputs 里的字段名。免费账号不能用 API。海外站把 www.runninghub.cn 换成 www.runninghub.ai",
+      "key_env": "RUNNINGHUB_API_KEY",
+      "workflow_id": "<填工作流 ID>",
+      "model": "",
+      "duration_range": [
+        3,
+        10
+      ],
+      "submit": {
+        "method": "POST",
+        "url": "https://www.runninghub.cn/task/openapi/create",
+        "headers": {
+          "Content-Type": "application/json",
+          "Host": "www.runninghub.cn",
+          "Authorization": "Bearer {key}"
+        },
+        "body": {
+          "apiKey": "{key}",
+          "workflowId": "{workflow_id}",
+          "nodeInfoList": [
+            {
+              "nodeId": "<提示词节点号>",
+              "fieldName": "text",
+              "fieldValue": "{prompt}"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "task_id": "data.taskId"
+      },
+      "poll": {
+        "method": "POST",
+        "url": "https://www.runninghub.cn/task/openapi/status",
+        "headers": {
+          "Content-Type": "application/json",
+          "Host": "www.runninghub.cn",
+          "Authorization": "Bearer {key}"
+        },
+        "body": {
+          "apiKey": "{key}",
+          "taskId": "{task_id}"
+        },
+        "status": "data",
+        "ok": [
+          "SUCCESS"
+        ],
+        "fail": [
+          "FAILED"
+        ]
+      },
+      "result": {
+        "method": "POST",
+        "url": "https://www.runninghub.cn/task/openapi/outputs",
+        "headers": {
+          "Content-Type": "application/json",
+          "Host": "www.runninghub.cn",
+          "Authorization": "Bearer {key}"
+        },
+        "body": {
+          "apiKey": "{key}",
+          "taskId": "{task_id}"
+        },
+        "video_url": "data.0.fileUrl"
+      }
+    },
+    "seedance": {
+      "enabled": false,
+      "verified": "2026-10-22 按火山方舟官方文档核对（创建/查询视频生成任务）",
+      "notes": "开通 Seedance 2.0 系列要求账户余额 >200 元或资源包；不收真人人脸参考图；video_url 只保留 24 小时",
+      "key_env": "ARK_API_KEY",
+      "model": "doubao-seedance-2-0-fast-260128",
+      "duration_range": [
+        4,
+        15
+      ],
+      "submit": {
+        "method": "POST",
+        "url": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+        "headers": {
+          "Authorization": "Bearer {key}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "{model}",
+          "content": [
+            {
+              "type": "text",
+              "text": "{prompt}"
+            }
+          ],
+          "ratio": "9:16",
+          "duration": "{duration}",
+          "resolution": "720p",
+          "generate_audio": false,
+          "watermark": false
+        }
+      },
+      "capture": {
+        "task_id": "id"
+      },
+      "poll": {
+        "method": "GET",
+        "url": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/{task_id}",
+        "headers": {
+          "Authorization": "Bearer {key}"
+        },
+        "status": "status",
+        "ok": [
+          "succeeded"
+        ],
+        "fail": [
+          "failed",
+          "expired",
+          "cancelled"
+        ],
+        "video_url": "content.video_url"
+      }
+    },
+    "minimax": {
+      "enabled": false,
+      "verified": "2026-10-22 只核对了创建任务（模型名、duration、resolution）；查询与取文件两步按公开文档惯例填写，接入时核对",
+      "notes": "海螺文生视频没有竖版参数，出 16:9 后在 build 里走画框条（fit: band），或用竖版首帧图走图生视频",
+      "key_env": "MINIMAX_API_KEY",
+      "model": "MiniMax-Hailuo-2.3",
+      "duration_range": [
+        6,
+        6
+      ],
+      "submit": {
+        "method": "POST",
+        "url": "https://api.minimax.cn/v1/video_generation",
+        "headers": {
+          "Authorization": "Bearer {key}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "{model}",
+          "prompt": "{prompt}",
+          "duration": "{duration}",
+          "resolution": "768P",
+          "prompt_optimizer": false
+        }
+      },
+      "capture": {
+        "task_id": "task_id"
+      },
+      "poll": {
+        "method": "GET",
+        "url": "https://api.minimax.cn/v1/query/video_generation?task_id={task_id}",
+        "headers": {
+          "Authorization": "Bearer {key}"
+        },
+        "status": "status",
+        "ok": [
+          "Success"
+        ],
+        "fail": [
+          "Fail"
+        ],
+        "capture": {
+          "file_id": "file_id"
+        }
+      },
+      "result": {
+        "method": "GET",
+        "url": "https://api.minimax.cn/v1/files/retrieve?file_id={file_id}",
+        "headers": {
+          "Authorization": "Bearer {key}"
+        },
+        "video_url": "file.download_url"
+      }
+    },
+    "kling": {
+      "enabled": false,
+      "verified": "未核对：按可灵开放平台公开文档惯例填写，接入时逐字段核对",
+      "notes": "可灵用 AccessKey+SecretKey 现签 JWT（HS256，iss=AK，30 分钟有效），auth 设为 kling_jwt，两个 key 分别放 KLING_ACCESS_KEY / KLING_SECRET_KEY",
+      "auth": "kling_jwt",
+      "key_env": "KLING_ACCESS_KEY",
+      "secret_env": "KLING_SECRET_KEY",
+      "model": "kling-v2-1",
+      "duration_range": [
+        5,
+        10
+      ],
+      "submit": {
+        "method": "POST",
+        "url": "https://api-beijing.klingai.com/v1/videos/text2video",
+        "headers": {
+          "Authorization": "Bearer {jwt}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model_name": "{model}",
+          "prompt": "{prompt}",
+          "duration": "{duration_str}",
+          "aspect_ratio": "9:16",
+          "mode": "std"
+        }
+      },
+      "capture": {
+        "task_id": "data.task_id"
+      },
+      "poll": {
+        "method": "GET",
+        "url": "https://api-beijing.klingai.com/v1/videos/text2video/{task_id}",
+        "headers": {
+          "Authorization": "Bearer {jwt}"
+        },
+        "status": "data.task_status",
+        "ok": [
+          "succeed"
+        ],
+        "fail": [
+          "failed"
+        ],
+        "video_url": "data.task_result.videos.0.url"
+      }
+    },
+    "fal": {
+      "enabled": false,
+      "verified": "未核对：fal 队列接口的通用形态；每个模型的入参不同，model 填 fal 上的模型路径，body 按该模型页面改",
+      "notes": "一个 FAL_KEY 能调多家模型（Kling、Hailuo、Wan、Seedance 等），适合海外账号",
+      "key_env": "FAL_KEY",
+      "model": "<fal 模型路径，例如 fal-ai/xxx/text-to-video>",
+      "duration_range": [
+        5,
+        10
+      ],
+      "submit": {
+        "method": "POST",
+        "url": "https://queue.fal.run/{model}",
+        "headers": {
+          "Authorization": "Key {key}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "prompt": "{prompt}",
+          "aspect_ratio": "9:16",
+          "duration": "{duration_str}"
+        }
+      },
+      "capture": {
+        "task_id": "request_id",
+        "status_url": "status_url",
+        "response_url": "response_url"
+      },
+      "poll": {
+        "method": "GET",
+        "url": "{status_url}",
+        "headers": {
+          "Authorization": "Key {key}"
+        },
+        "status": "status",
+        "ok": [
+          "COMPLETED"
+        ],
+        "fail": [
+          "ERROR",
+          "FAILED"
+        ]
+      },
+      "result": {
+        "method": "GET",
+        "url": "{response_url}",
+        "headers": {
+          "Authorization": "Key {key}"
+        },
+        "video_url": "video.url"
+      }
+    },
+    "custom": {
+      "enabled": false,
+      "verified": "",
+      "notes": "空白位：照上面任一渠道的结构填。异步三步＝submit 建任务 → poll 轮询 → （可选）result 取地址；同步接口只写 submit 并在 submit 里写 video_url",
+      "key_env": "CUSTOM_VIDEO_API_KEY",
+      "model": "",
+      "duration_range": [
+        4,
+        10
+      ],
+      "submit": {
+        "method": "POST",
+        "url": "",
+        "headers": {
+          "Authorization": "Bearer {key}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "prompt": "{prompt}"
+        }
+      },
+      "capture": {
+        "task_id": ""
+      },
+      "poll": {
+        "method": "GET",
+        "url": "",
+        "headers": {
+          "Authorization": "Bearer {key}"
+        },
+        "status": "",
+        "ok": [],
+        "fail": [],
+        "video_url": ""
+      }
+    }
+  }
+}

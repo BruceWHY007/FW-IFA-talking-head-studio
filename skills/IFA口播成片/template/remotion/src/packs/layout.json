@@ -1,0 +1,221 @@
+{
+  "_说明": "六套风格包的版面骨架（1080×1920）。window＝画面窗 [x, y, w, h]；faceY＝人脸中心落在画面窗高度的哪个位置（null＝保持原片位置）；maxChars＝字幕每行字数上限（右沿不压进右侧互动栏）；build.py 按 window 尺寸归一化 B-roll。代号：A editorial／B glass／C kinetic／K1 evidence／K2 diagram／K3 brand。 infoCard／presenter／figureCard／caption 给 qa.py 用（冻结只量该动的区域、字幕对比度按各包的字幕几何量），改了包里的位置要同步这里。",
+  "editorial": {
+    "window": [
+      0,
+      300,
+      1080,
+      1120
+    ],
+    "faceY": 0.49,
+    "maxChars": 14,
+    "coverInWindow": true,
+    "label": "A · 分带刊物 v4",
+    "code": "A",
+    "infoCard": [
+      72,
+      122,
+      936,
+      856
+    ],
+    "presenter": null,
+    "figureCard": null,
+    "caption": {
+      "mode": "band",
+      "band": [
+        1420,
+        1760
+      ],
+      "x": 72,
+      "size": 52,
+      "ink": "#191612"
+    }
+  },
+  "glass": {
+    "window": [
+      0,
+      0,
+      1080,
+      1920
+    ],
+    "faceY": null,
+    "maxChars": 12,
+    "label": "B · 雾金玻璃",
+    "code": "B",
+    "coverInWindow": true,
+    "infoCard": [
+      64,
+      394,
+      952,
+      832
+    ],
+    "presenter": null,
+    "figureCard": null,
+    "caption": {
+      "mode": "overlay",
+      "top": 1300,
+      "topLow": 1400,
+      "align": "center",
+      "size": 52,
+      "fg": "#F7F1E8"
+    }
+  },
+  "kinetic": {
+    "window": [
+      0,
+      0,
+      1080,
+      1920
+    ],
+    "faceY": null,
+    "maxChars": 11,
+    "label": "C · 港刊大字",
+    "code": "C",
+    "coverInWindow": true,
+    "infoCard": [
+      98,
+      580,
+      880,
+      640
+    ],
+    "presenter": [
+      736,
+      196,
+      280,
+      330
+    ],
+    "figureCard": null,
+    "caption": {
+      "mode": "overlay",
+      "top": 1270,
+      "topLow": 1380,
+      "align": "left",
+      "x": 98,
+      "size": 58,
+      "fg": "#F6F0E6"
+    }
+  },
+  "evidence": {
+    "window": [
+      0,
+      312,
+      1080,
+      1100
+    ],
+    "faceY": 0.47,
+    "maxChars": 14,
+    "coverInWindow": true,
+    "label": "K1 · 证据桌",
+    "code": "K1",
+    "infoCard": [
+      70,
+      70,
+      940,
+      730
+    ],
+    "presenter": [
+      770,
+      840,
+      250,
+      230
+    ],
+    "figureCard": [
+      80,
+      330,
+      920,
+      660
+    ],
+    "caption": {
+      "mode": "band",
+      "band": [
+        1412,
+        1760
+      ],
+      "x": 72,
+      "size": 56,
+      "ink": "#1B1B1A"
+    }
+  },
+  "diagram": {
+    "window": [
+      0,
+      320,
+      1080,
+      1100
+    ],
+    "faceY": 0.47,
+    "maxChars": 14,
+    "coverInWindow": true,
+    "label": "K2 · 图解",
+    "code": "K2",
+    "infoCard": [
+      72,
+      56,
+      936,
+      640
+    ],
+    "presenter": [
+      628,
+      712,
+      380,
+      370
+    ],
+    "figureCard": [
+      72,
+      330,
+      936,
+      640
+    ],
+    "caption": {
+      "mode": "band",
+      "band": [
+        1420,
+        1760
+      ],
+      "x": 72,
+      "size": 56,
+      "ink": "#15181D"
+    }
+  },
+  "brand": {
+    "window": [
+      72,
+      280,
+      936,
+      1120
+    ],
+    "faceY": 0.47,
+    "maxChars": 14,
+    "coverInWindow": true,
+    "label": "K3 · IFA 品牌刊",
+    "code": "K3",
+    "infoCard": [
+      40,
+      60,
+      856,
+      800
+    ],
+    "presenter": [
+      676,
+      860,
+      220,
+      220
+    ],
+    "figureCard": [
+      40,
+      300,
+      856,
+      660
+    ],
+    "caption": {
+      "mode": "band",
+      "band": [
+        1400,
+        1600
+      ],
+      "x": 72,
+      "size": 56,
+      "ink": "#1d1611"
+    }
+  }
+}

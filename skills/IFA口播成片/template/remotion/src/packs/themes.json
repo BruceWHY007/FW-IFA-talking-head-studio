@@ -1,0 +1,9 @@
+{
+  "_说明": "账号主题：一个账号固定一套（身份），每支片子的封面形式、信息卡按内容变（不重样）。paper＝浅底纸色；accent＝纸上的强调文字（对 paper ≥4.5:1）；line＝纸上的细线；dark＝暗底上的强调（对 #0D1216 ≥7:1）；foot＝最底页脚（平台白字压在这里，对白字 ≥12:1）。K1 证据桌的红与 K3 品牌刊的橙是风格本身，不跟主题变。",
+  "琥珀金": {"paper": "#F3EDE3", "accent": "#7F5631", "line": "#94673D", "dark": "#D8A863", "foot": "#0D1216"},
+  "维港青": {"paper": "#E7EDEB", "accent": "#2E5A5F", "line": "#3F6E73", "dark": "#8FC1C4", "foot": "#0F2629"},
+  "胭脂红": {"paper": "#F4E8E3", "accent": "#8E3B33", "line": "#A04A40", "dark": "#E39A8C", "foot": "#2A1311"},
+  "墨蓝": {"paper": "#E8ECF1", "accent": "#27466B", "line": "#3A5A82", "dark": "#9DB7D9", "foot": "#0E1A2A"},
+  "橄榄": {"paper": "#EDEDE1", "accent": "#56622F", "line": "#6B7840", "dark": "#C2CB8E", "foot": "#1C2112"},
+  "IFA橙": {"paper": "#FBEDE2", "accent": "#B5481A", "line": "#C8582A", "dark": "#F2A06B", "foot": "#2A160C"}
+}
