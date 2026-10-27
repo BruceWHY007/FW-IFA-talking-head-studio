@@ -19,8 +19,8 @@ npx skills add <owner>/<repo> -g
 装完先自检：
 
 ```bash
-bash ~/.agents/skills/IFA口播成片/scripts/setup.sh     # 装 Remotion 运行时（只装一次）
-bash ~/.agents/skills/IFA口播成片/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
+bash ~/.agents/skills/IFA-koubo-chengpian/scripts/setup.sh     # 装 Remotion 运行时（只装一次）
+bash ~/.agents/skills/IFA-koubo-chengpian/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
 ```
 
 ## 最短用法
@@ -34,7 +34,7 @@ bash ~/.agents/skills/IFA口播成片/scripts/doctor.sh    # 逐项报「有／�
 命令行等价：
 
 ```bash
-SK=~/.agents/skills/IFA口播成片
+SK=~/.agents/skills/IFA-koubo-chengpian
 python3 $SK/scripts/catalog.py --video 原片.mp4                 # ⓪ 风格目录
 python3 $SK/scripts/new_project.py 原片.mp4 ~/片库/项目/这一期    # ① 建工程
 python3 $SK/scripts/ingest.py ~/片库/项目/这一期 --prompt "专有名词"
@@ -74,5 +74,5 @@ MIT。其中 `assets/fonts` 为 SIL Open Font License 1.1（Source Han Serif、B
 ## 校验
 
 ```bash
-python3 <dbs-skill-maker>/scripts/validate_skill_project.py skills/IFA口播成片
+python3 <dbs-skill-maker>/scripts/validate_skill_project.py skills/IFA-koubo-chengpian
 ```
