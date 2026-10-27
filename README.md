@@ -12,14 +12,19 @@
 
 ## 安装
 
+仓库是**私有**的，先让仓库主把你要装的账号加成 collaborator，然后：
+
 ```bash
-npx skills add <owner>/<repo> -g
+gh auth login                       # 有权限的 GitHub 账号
+npx skills add BruceWHY007/FW-IFA-koubo-chengpian -g --agent claude-code
 ```
+
+装到 `~/.agents/skills/IFA-koubo-chengpian`（或对应 Agent 的 skills 目录）。
 
 装完先自检：
 
 ```bash
-bash ~/.agents/skills/IFA-koubo-chengpian/scripts/setup.sh     # 装 Remotion 运行时（只装一次）
+bash ~/.agents/skills/IFA-koubo-chengpian/scripts/setup.sh     # 装 Remotion 运行时（只装一次，约 500MB）
 bash ~/.agents/skills/IFA-koubo-chengpian/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
 ```
 
