@@ -1,4 +1,4 @@
-# 口播成片 · talking-head-studio
+# FW-IFA 口播成片 · FW-IFA-talking-head-studio
 
 把一条**真人对着镜头说话**的原始视频，做成可以直发的竖版成片。
 
@@ -16,16 +16,16 @@
 
 ```bash
 gh auth login                       # 有权限的 GitHub 账号
-npx skills add BruceWHY007/FW-talking-head-studio -g --agent claude-code
+npx skills add BruceWHY007/FW-FW-IFA-talking-head-studio -g --agent claude-code
 ```
 
-装到 `~/.agents/skills/talking-head-studio`（或对应 Agent 的 skills 目录）。
+装到 `~/.agents/skills/FW-IFA-talking-head-studio`（或对应 Agent 的 skills 目录）。
 
 装完先自检：
 
 ```bash
-bash ~/.agents/skills/talking-head-studio/scripts/setup.sh     # 装 Remotion 运行时（只装一次，约 500MB）
-bash ~/.agents/skills/talking-head-studio/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
+bash ~/.agents/skills/FW-IFA-talking-head-studio/scripts/setup.sh     # 装 Remotion 运行时（只装一次，约 500MB）
+bash ~/.agents/skills/FW-IFA-talking-head-studio/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
 ```
 
 ## 最短用法
@@ -39,7 +39,7 @@ bash ~/.agents/skills/talking-head-studio/scripts/doctor.sh    # 逐项报「有
 命令行等价：
 
 ```bash
-SK=~/.agents/skills/talking-head-studio
+SK=~/.agents/skills/FW-IFA-talking-head-studio
 python3 $SK/scripts/catalog.py --video 原片.mp4                 # ⓪ 风格目录
 python3 $SK/scripts/new_project.py 原片.mp4 ~/片库/项目/这一期    # ① 建工程
 python3 $SK/scripts/ingest.py ~/片库/项目/这一期 --prompt "专有名词"
@@ -79,5 +79,5 @@ MIT。其中 `assets/fonts` 为 SIL Open Font License 1.1（Source Han Serif、B
 ## 校验
 
 ```bash
-python3 <dbs-skill-maker>/scripts/validate_skill_project.py skills/talking-head-studio
+python3 <dbs-skill-maker>/scripts/validate_skill_project.py skills/FW-IFA-talking-head-studio
 ```

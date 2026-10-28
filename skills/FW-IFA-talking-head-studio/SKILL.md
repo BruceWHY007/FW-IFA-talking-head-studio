@@ -1,11 +1,11 @@
 ---
-name: talking-head-studio
+name: FW-IFA-talking-head-studio
 description: 把一条真人口播原片（手机或相机拍的对镜头讲话）做成有设计感的竖版成片：转写校对 → 拆 A-roll（哪句留脸、哪句盖 B-roll、盖什么信息）→ 剪口癖压停顿 → B-roll 三路来源（用户素材库挑选／免费素材库检索／AI 生成接口，生成渠道按配置接入、默认不调）→ 六套风格包按内容选（A 分带刊物／B 雾金玻璃／C 港刊大字／K1 证据桌／K2 图解／K3 IFA 品牌刊），账号主题区分不同的人，每一支按内容换封面形式和信息卡（原文／对比／清单／时间线／柱图）、按账号登记错开，不出一模一样的片子；刊头、字幕、名字条、标注、分屏、大字卡与跟着说话走的动态 → 配乐避让与 −14 LUFS → 量化验收＋接缝检查＋独立评审子代理。结构基准拆自复星财富 IFA 财经口播参考片，设计借 IFA App 展示片「视觉带与文字带分开」升级。用户给一条口播视频说「做成片」「包装一下」「加 B-roll」「按那支参考片的样子做」「口播成片」「口播剪辑包装」时使用。不归这里：没有原片、要从内容或口播稿生成整片 → IFA-AI人物视频／video-talkcraft；只写口播稿 → IFA口播选题库；要在 ChatCut 编辑器里可编辑交付 → chatcut:talking-head-guide；只要一条生成提示词 → seedance-20／cinematic-video-prompt-engineer。
 ---
 
-# 口播成片 · talking-head-studio
+# FW-IFA 口播成片 · talking-head-studio
 
-> 一条真人对镜头讲话的原片，做成有设计感的竖版成片。中文名「口播成片」，装完目录 `~/.agents/skills/talking-head-studio`。
+> 一条真人对镜头讲话的原片，做成有设计感的竖版成片。装完目录 `~/.agents/skills/FW-IFA-talking-head-studio`。
 
 > **换机器、换 AI 接手、第一次装**：先读根目录的 `移植与环境说明.md`（全部规范、外部工具、其他 skill、系统环境、安装与自检、数据契约、红线），
 > 再跑 `bash scripts/setup.sh` 与 `bash scripts/doctor.sh`。
