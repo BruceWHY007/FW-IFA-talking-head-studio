@@ -1,4 +1,4 @@
-# FW-IFA 口播成片 · FW-IFA-talking-head-studio
+# FW-IFA 口播成片 · talking-head-studio
 
 把一条**真人对着镜头说话**的原始视频，做成可以直发的竖版成片。
 
@@ -12,20 +12,19 @@
 
 ## 安装
 
-仓库是**私有**的，先让仓库主把你要装的账号加成 collaborator，然后：
+仓库公开，一条命令，不需要登录也不需要授权：
 
 ```bash
-gh auth login                       # 有权限的 GitHub 账号
-npx skills add BruceWHY007/FW-FW-IFA-talking-head-studio -g --agent claude-code
+npx skills add BruceWHY007/FW-IFA-talking-head-studio -g --agent claude-code
 ```
 
-装到 `~/.agents/skills/FW-IFA-talking-head-studio`（或对应 Agent 的 skills 目录）。
+装到 `~/.agents/skills/fw-ifa-talking-head-studio`（npx 会把名字转小写）。换 Agent 就把 `claude-code` 换成 `codex`／`cursor` 等。
 
 装完先自检：
 
 ```bash
-bash ~/.agents/skills/FW-IFA-talking-head-studio/scripts/setup.sh     # 装 Remotion 运行时（只装一次，约 500MB）
-bash ~/.agents/skills/FW-IFA-talking-head-studio/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
+bash ~/.agents/skills/fw-ifa-talking-head-studio/scripts/setup.sh     # 装 Remotion 运行时（只装一次，约 500MB）
+bash ~/.agents/skills/fw-ifa-talking-head-studio/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
 ```
 
 ## 最短用法
@@ -39,7 +38,7 @@ bash ~/.agents/skills/FW-IFA-talking-head-studio/scripts/doctor.sh    # 逐项�
 命令行等价：
 
 ```bash
-SK=~/.agents/skills/FW-IFA-talking-head-studio
+SK=~/.agents/skills/fw-ifa-talking-head-studio
 python3 $SK/scripts/catalog.py --video 原片.mp4                 # ⓪ 风格目录
 python3 $SK/scripts/new_project.py 原片.mp4 ~/片库/项目/这一期    # ① 建工程
 python3 $SK/scripts/ingest.py ~/片库/项目/这一期 --prompt "专有名词"
@@ -79,5 +78,5 @@ MIT。其中 `assets/fonts` 为 SIL Open Font License 1.1（Source Han Serif、B
 ## 校验
 
 ```bash
-python3 <dbs-skill-maker>/scripts/validate_skill_project.py skills/FW-IFA-talking-head-studio
+python3 <dbs-skill-maker>/scripts/validate_skill_project.py skills/fw-ifa-talking-head-studio
 ```
