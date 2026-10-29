@@ -21,6 +21,7 @@ ap.add_argument("--episode", default="")
 ap.add_argument("--account", default="")
 ap.add_argument("--theme", default="")
 ap.add_argument("--max-cards", type=int, default=6, help="数字卡／词卡最多几张（默认 6，和进度动效一起别超过 25% 时长）")
+ap.add_argument("--broll", type=int, default=6, help="满幅 B-roll 最多几条（默认 6；0＝不要）")
 ap.add_argument("--gap", type=float, default=14.0, help="两张卡之间至少隔几秒（默认 14）")
 a = ap.parse_args()
 proj = os.path.abspath(a.proj)
@@ -114,6 +115,19 @@ while gaps(marks_) and guard < 30:
     (gold if len(gold) <= len(silver) else silver).append(c)
     marks_.append(t_c); marks_.sort()
 
+# ---------- 5. 满幅 B-roll（只用 full 版式，不做小窗／分带）：挑最长的人脸空档，每个空档取中间一句 ----------
+brolls = []
+if a.broll:
+    ev_all = sorted(set([0.0, dur] + ev_t))
+    slots = sorted([(y - x, x, y) for x, y in zip(ev_all, ev_all[1:]) if y - x > 8], reverse=True)[:a.broll]
+    for _, x, y in sorted(slots, key=lambda t: t[1]):
+        mid = (x + y) / 2
+        s_mid = min([s for s in sents if x + 2 < s["start"] < y - 4] or sents, key=lambda s: abs((s["start"] + s["end"]) / 2 - mid))
+        txt = s_mid["text"]
+        brolls.append({"id": "B%02d" % (len(brolls) + 1), "type": "B", "layout": "full", "cover": txt[:14].strip(PUNCT) if len(strip(txt)) <= 16 else strip(txt)[:6] + "…" + strip(txt)[-6:],
+                       "why": "极简档：连续人脸空档里补一条满幅 B-roll（stock.py auto 自动取素材）"})
+shots = sorted(shots + brolls, key=lambda sh: 0)   # 顺序交给 build（按锚点定位）
+
 first = strip(sents[0]["text"])[:14] if sents else "口播笔记"
 dec = {
     "_说明": "极简档自动规划（lite_plan.py）：只用满幅人脸＋数字卡＋步骤标题＋关键词变金；要补 B-roll 的地方见 tips。",
@@ -145,4 +159,4 @@ json.dump(dec, open(out, "w"), ensure_ascii=False, indent=1)
 print("✓ %s：数字卡 %d 张、步骤标题 %d 处、金银整行 %d 句、关键词 %d 个" % (out, len(shots), len(texts), len(gold) + len(silver), len(hl)))
 for t in tips:
     print("  · tips：" + t)
-print("下一步：python3 build.py %s --decompose %s && python3 render.py %s" % (proj, out, proj))
+print("下一步：python3 stock.py %s auto --decompose %s ；python3 build.py %s --decompose %s ；python3 render.py %s" % (proj, out, proj, out, proj))

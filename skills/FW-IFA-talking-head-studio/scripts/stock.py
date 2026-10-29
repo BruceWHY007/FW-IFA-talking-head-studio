@@ -6,6 +6,7 @@
     python3 stock.py <工程> get <源>:<id> <存成的名字> [<源>:<id> <名字> ...]
     python3 stock.py <工程> get <pexels 纯数字 id> <名字>              # 老写法，默认当 Pexels
     python3 stock.py <工程> plan [--decompose decompose_F.json]        # 按镜头批量检索：每个缺素材的 B 镜头一张候选图（带自动体检角标）
+    python3 stock.py <工程> auto --decompose decompose_lite.json       # 极简档：不用人挑，每个缺素材的 B 镜头自动取第一条「干净」候选并写回 pick
     python3 stock.py <工程> lexicon "原话"                             # 看这句话按概念词表会搜哪些画面词
     python3 stock.py <工程> search "画面词" --source ov                 # Openverse 图片（CC 可商用且可改编，免 key）
 
@@ -603,7 +604,7 @@ elif cmd == "search":
     with ThreadPoolExecutor(3) as ex:
         for q, r in ex.map(lambda q: do_search(q, pick_sources()), args):
             print("==", q, len(r), "条 →", os.path.join(D, "_thumbs", "sheet_%s.jpg" % slug(q)))
-elif cmd in ("plan", "lexicon"):
+elif cmd in ("plan", "lexicon", "auto"):
     # 概念词表：抽象财经概念 → 看得见的画面（R0 的做法：「监管看得见」配数据地球，「长期」配钟表与公路）
     LEX = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "template", "broll_lexicon.json")))
     def suggest(text):
@@ -616,6 +617,65 @@ elif cmd in ("plan", "lexicon"):
         for t in args:
             for c in suggest(t):
                 print("「%s」→ %s：%s  （避开：%s）" % (t, c["name"], " | ".join(c["queries"]), "、".join(c.get("avoid", [])) or "—"))
+        sys.exit(0)
+    if cmd == "auto":
+        DEFAULTS = [["hong kong city skyline", "modern office window city view"], ["hong kong street tram", "city traffic night"],
+                    ["business meeting office", "documents desk close up"]]
+        dec_p = P(proj, args[args.index("--decompose") + 1]) if "--decompose" in args else P(proj, "decompose.json")
+        dec = json.load(open(dec_p))
+        used, n_ok, k_def = set(), 0, 0
+        for sh in dec.get("shots", []):
+            if sh.get("type") not in ("B", "S") or sh.get("pick") or sh.get("image"):
+                continue
+            qs = sh.get("q") or [q for c in suggest(sh.get("cover", "")) for q in c["queries"][:2]][:3]
+            if not qs:
+                qs = DEFAULTS[k_def % len(DEFAULTS)]; k_def += 1
+            landscape = False
+            best = None
+            r_ = n_ok % len(qs)
+            for q in qs[r_:] + qs[:r_]:   # 轮换检索词：不让每一镜都搜同一个词
+                _, r = do_search(q, pick_sources("pexels,pixabay"))
+                for it, pth in r:
+                    key = "%s:%s" % (it["src"], it["id"])
+                    if key not in used and not FLAGS.get(pth):
+                        best = (key, it); break
+                if best:
+                    break
+            if not best:
+                print("· %s 没找到干净候选（字／脸／暗／静都有角标），留空" % sh["id"]); continue
+            used.add(best[0])
+            name = "st_%s" % sh["id"].lower()
+            do_get(best[0], name)
+            fp_ = os.path.join(D, name + ".mp4")
+            if not (os.path.exists(fp_) and os.path.getsize(fp_) > 50000):
+                print("· %s 下载失败，留空" % sh["id"]); continue
+            sh["pick"] = "stock:" + name
+            sh.setdefault("in", 0.5)
+            n_ok += 1
+            print("✓ %s ← %s（q=%s）" % (sh["id"], best[0], qs[0]))
+        # 一张核对总图：自动取的素材没人挑过，只看这一张图就够（对题吗？有外国国旗／陌生人正脸吗？）
+        try:
+            from PIL import Image, ImageDraw
+            picked_ = [sh for sh in dec.get("shots", []) if str(sh.get("pick", "")).startswith("stock:st_")]
+            tiles = []
+            for sh in picked_:
+                nm = sh["pick"][6:]
+                th_ = [f for f in glob.glob(os.path.join(D, "_thumbs", "*.jpg")) if "sheet_" not in f]
+                key = json.load(open(os.path.join(D, "stock_picks.json"))).get(nm, {})
+                cand = [f for f in th_ if "_%s." % key.get("id", "?") in f]
+                if cand:
+                    tiles.append((sh["id"], cand[0], sh.get("cover", "")))
+            if tiles:
+                sheet = Image.new("RGB", (220 * len(tiles), 420), (16, 14, 12)); d_ = ImageDraw.Draw(sheet)
+                for i, (sid, fpth, cv) in enumerate(tiles):
+                    im = Image.open(fpth).convert("RGB"); im.thumbnail((210, 340)); sheet.paste(im, (i * 220 + 5, 36))
+                    d_.text((i * 220 + 6, 6), sid, fill="yellow", font=font(22)); d_.text((i * 220 + 6, 384), cv[:9], fill="white", font=font(18))
+                sheet.save(os.path.join(D, "auto_check.jpg"), quality=85)
+                print("核对总图（看这一张就够）→", os.path.join(D, "auto_check.jpg"))
+        except Exception as e_:
+            print("· 核对总图没出：", str(e_)[:60])
+        json.dump(dec, open(dec_p, "w"), ensure_ascii=False, indent=1)
+        print("自动取素材 %d 条，已写回 %s" % (n_ok, dec_p))
         sys.exit(0)
     dec_p = P(proj, "decompose.json")
     if "--decompose" in args:
