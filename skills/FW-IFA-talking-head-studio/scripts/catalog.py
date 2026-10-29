@@ -18,6 +18,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--video", default="", help="用户给的原片；给了才渲目录")
 ap.add_argument("--seconds", type=float, default=6.0, help="从头取多少秒做样片（默认 6s）")
 ap.add_argument("--keep", action="store_true", help="保留临时工程，方便排查")
+ap.add_argument("--placeholder", action="store_true", help="不用真人：用剪影做样片（给 GitHub 介绍图用，图里没有任何人脸）")
+ap.add_argument("--publish", default="", help="把每套风格的预览条和总览拷到这个目录（配 --placeholder 用）")
 a = ap.parse_args()
 
 CACHE = os.path.expanduser("~/.cache/ifa-koubo/catalog")
@@ -43,9 +45,31 @@ def menu():
     print("回法：`A` / `K1` 这样一行；要深底就补一个词，例如 `A fade`。不回、或回「默认」，就用 F 满幅讲述。")
 
 
-if not a.video:
+if not a.video and not a.placeholder:
     menu()
     raise SystemExit(0)
+
+if a.placeholder:
+    # 剪影样片：暖灰底＋头肩剪影，轻微呼吸；只为让版式、字、卡片能渲出来
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFilter
+    td = os.path.join(CACHE + "_ph")
+    shutil.rmtree(td, ignore_errors=True); os.makedirs(td)
+    for i in range(int(a.seconds * 30)):
+        t = i / 30.0
+        im = Image.new("RGB", (1080, 1920), "#3b342d")
+        g = np.linspace(0, 1, 1920)[:, None, None]
+        arr = np.asarray(im).astype("float32") * (0.85 + 0.35 * (1 - g)) + 12 * np.sin(t * 1.3)
+        im = Image.fromarray(np.clip(arr, 0, 255).astype("uint8"))
+        d = ImageDraw.Draw(im)
+        k = 1 + 0.01 * np.sin(t * 2.0)
+        cx, cy = 540, 760
+        d.ellipse([cx - 150 * k, cy - 190 * k, cx + 150 * k, cy + 190 * k], fill="#b8aa98")
+        d.rounded_rectangle([cx - 330 * k, cy + 190, cx + 330 * k, 1500], radius=170, fill="#a39683")
+        im.filter(ImageFilter.GaussianBlur(1.2)).save(os.path.join(td, "f%04d.png" % i))
+    a.video = os.path.join(td, "ph.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", "30", "-i", os.path.join(td, "f%04d.png"), "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p", a.video], check=True)
 
 raw = os.path.abspath(a.video)
 if not os.path.exists(raw):
@@ -90,7 +114,7 @@ dur = probe(aout)["duration"]
 print("· 样片 A-roll %.1fs 1080×1920" % dur)
 
 # ---------- 3. 人脸位置（Vision；拿不到就居中）----------
-face = {"cx": 0.507, "cy": 0.45}
+face = {"cx": 0.5, "cy": 0.40} if a.placeholder else {"cx": 0.507, "cy": 0.45}
 fd = P(proj, "work", "_face")
 os.makedirs(fd, exist_ok=True)
 for i in range(6):
@@ -99,7 +123,7 @@ for i in range(6):
 face_bin = os.path.expanduser("~/.cache/ifa-koubo/face")
 if not os.path.exists(face_bin):
     subprocess.run(["swiftc", "-O", os.path.join(SKILL, "scripts", "face.swift"), "-o", face_bin], capture_output=True)
-if os.path.exists(face_bin):
+if os.path.exists(face_bin) and not a.placeholder:
     try:
         got = json.loads(subprocess.run([face_bin, fd], capture_output=True, text=True).stdout or "{}")
         faces = [f for v_ in got.values() for f in v_ if f.get("conf", 0) > 0.5 and f.get("w", 0) > 0.12]
@@ -126,5 +150,13 @@ shutil.copy(over, stable)
 print("")
 print("✓ 风格目录（用这位用户自己的画面）→ %s" % stable)
 print("  把这张图发给用户，等一个代号：F（默认）/ A / B / C / K1 / K2 / K3；不回就是 F")
+if a.publish:
+    od = os.path.abspath(a.publish); os.makedirs(od, exist_ok=True)
+    for c in ["F", "A", "B", "C", "K1", "K2", "K3"]:
+        src = P(proj, "out", "风格目录", c + ".jpg")
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(od, c + ".jpg"))
+    shutil.copy(over, os.path.join(od, "总览.jpg"))
+    print("✓ 预览图 → %s" % od)
 if not a.keep:
     shutil.rmtree(P(proj, "work", "_face"), ignore_errors=True)

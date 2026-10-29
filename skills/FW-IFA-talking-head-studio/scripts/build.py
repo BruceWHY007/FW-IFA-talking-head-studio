@@ -894,7 +894,7 @@ if STYLE == "fullbleed":
         if gap / FPS > 12:
             warn.append("满幅人脸 %s–%s 有 %.1fs 没有任何版面事件（>12s）：加一处插条／堆叠／金银整行，或盖一条 B-roll" % (hms(a0 / FPS), hms(a1 / FPS), gap / FPS))
     a_share = a_total / DUR
-    if not 0.45 <= a_share <= 0.75:
+    if not 0.45 <= a_share <= 0.75 and not dec.get("lite"):   # 极简档（lite_plan.py）本来就只靠字和数字卡撑节奏，不查人脸占比
         warn.append("满幅人脸占 %.0f%%（F 包区间 45–75%%，R0 实测 61%%＋插条 7%%）：%s" % (a_share * 100, "B／卡片太多，人被挤掉了" if a_share < 0.45 else "画面处理太少，会读作一条没剪的口播"))
     lays = [x.get("layout", "full") for x in out_shots if x["type"] in ("B", "S")]
     for k_ in range(len(lays) - 2):
