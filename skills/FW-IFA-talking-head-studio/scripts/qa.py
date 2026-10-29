@@ -53,6 +53,13 @@ wx, wy, ww, wh = LAY.get(STYLE, LAY["editorial"])["window"]
 y0_, y1_ = int(wy / 1920 * 480), int(min(wy + wh, 1250) / 1920 * 480)  # 满幅版式也排除下部字幕区
 g_win = g[:, y0_:y1_, :]
 d = np.abs(np.diff(g_win, axis=0)).mean(axis=(1, 2))
+# 隔 6 帧再量一次：慢速漂移（光斑、缓推）相邻帧只差 0.2，但 6 帧累积起来明显；真冻住的画面隔 6 帧也几乎不变
+# （10-29：F 包大字卡加了光斑后相邻帧 0.21、隔 6 帧 0.79–1.1；加之前隔 6 帧只有 0.13）
+LAG = 6
+def _lag(a, i, msk=None):
+    j = min(i + LAG, len(a) - 1)
+    return float(np.abs(a[j][msk] - a[i][msk]).mean()) if msk is not None else float(np.abs(a[j] - a[i]).mean())
+d6 = np.array([_lag(g_win, i) for i in range(len(d))])
 # 卡片镜头：卡面本身是给人读的（按设计静止），量「该动的地方」——K 包量讲解人框，A／B／C 量卡片以外的画面窗；
 # 有实底卡面的大字卡（K 包）也扣掉卡面（第 6 轮样片：整窗平均把讲解人的动作摊薄成「冻结」）
 GEO_ = LAY.get(STYLE, {})
@@ -65,7 +72,9 @@ def _mask(rect_win):
     return m
 win_m = np.zeros(g.shape[1:3], bool); win_m[y0_:y1_, int(wx / 1080 * g.shape[2]):int((wx + ww) / 1080 * g.shape[2])] = True
 for sh in tl["shots"]:
-    if sh["type"] == "I":
+    if sh["type"] == "I" and (sh.get("info") or {}).get("surface") == "paper":
+        m = _mask([340, 150, 400, 520])   # F 皱纸单：纸面按设计静止，量上方方窗里的她
+    elif sh["type"] == "I":
         m = _mask(GEO_["presenter"]) if GEO_.get("presenter") else (win_m & ~_mask(GEO_["infoCard"]) if GEO_.get("infoCard") else win_m)
     elif sh["type"] == "G" and GEO_.get("figureCard"):
         m = win_m & ~_mask(GEO_["figureCard"])
@@ -76,13 +85,15 @@ for sh in tl["shots"]:
     a_, b_ = max(sh["from"] - 1, 0), min(sh["to"] - 1, len(d))
     for i_ in range(a_, b_):
         d[i_] = float(np.abs(g[i_ + 1][m] - g[i_][m]).mean())
+        d6[i_] = _lag(g, i_, m)
 OUT0 = tl["outro"]["from"] if tl.get("outro") else 10 ** 9  # 落版段按设计是停帧缓推，冻结检查豁免
 d = d[:max(OUT0 - 1, 1)]
+still = (d < 0.35) & (d6[:len(d)] < 0.5)
 frz, st = [], None
-for i, x in enumerate(d):
-    if x < 0.35 and st is None:
+for i, x in enumerate(still):
+    if x and st is None:
         st = i
-    elif x >= 0.35 and st is not None:
+    elif not x and st is not None:
         if (i - st) / FPS > 0.5:
             frz.append((st / FPS, (i - st) / FPS))
         st = None
@@ -115,6 +126,13 @@ if aj.get("voice_over_music_db_p10") is not None:
 # 5 对位
 tc = load(P(proj, "work", "transcript_cut.json"))
 starts = sorted(int(round(c["s"] * FPS)) for s in tc["sentences"] for c in s["chars"])
+ALLC = [(c["c"], int(round(c["s"] * FPS))) for s in tc["sentences"] for c in s["chars"]]
+def onset_of(text, fr):
+    # 这一行第一个字的开口帧：在 ±20 帧里找同一个字，找不到才退回「最近的开口」
+    # （10-29：「对外投资」比开口早 3 帧，旧算法取了最近的上一个字「了」，误报晚 2 帧）
+    ch = (text or " ")[0]
+    cand = [f_ for c_, f_ in ALLC if c_ == ch and abs(f_ - fr) <= 20]
+    return min(cand, key=lambda x: abs(x - fr)) if cand else min(starts, key=lambda x: abs(x - fr))
 edges = sorted(set([s["from"] for s in tl["shots"]] + [s["to"] for s in tl["shots"]]))
 # 量的是「字完整可读」的那一帧，不是动画起点（10-22 评审：原来量动画起点，等于假通过）。
 # 有入场的卡：遮罩 4 帧揭完；同段换卡与第二行：出现即完整。可读帧比开口早 ≤6 帧、晚 ≤1 帧才算对位
@@ -122,10 +140,12 @@ cover_end = 0 if (not tl.get("cover") or tl.get("coverInWindow")) else tl["cover
 off = []
 late_total = 0
 for c in tl["captions"]:
+    if c.get("hidden"):
+        continue   # 画面里不画的字幕（F 包让位给皱纸单／堆叠清单／步骤标题）不量
     for j, l in enumerate(c["lines"]):
         if c.get("cont") and l["from"] < c["from"]:
             continue
-        onset = min(starts, key=lambda x: abs(x - l["from"]))
+        onset = onset_of(l["text"], l["from"])
         if onset < cover_end:
             continue  # 封面停留期间那句不上字幕，按设计豁免
         readable = (c["from"] + 4) if (c.get("animate") and j == 0) else max(l["from"], c["from"])
@@ -143,7 +163,7 @@ add("音画同长（口型）", abs(vd - ad) <= 1 / FPS, "画面 %.3fs 人声 %.
 caps_ = tl["captions"]
 short = []
 for i_, c in enumerate(caps_):
-    if c.get("cont"):
+    if c.get("cont") or c.get("hidden"):
         continue
     to_ = c["to"]
     j_ = i_ + 1
@@ -202,7 +222,7 @@ if CG["mode"] == "band":
                 "brand": "#B5481A"}.get(STYLE, CG["ink"]))
     b0, b1 = CG["band"]
     for c in tl["captions"]:
-        if c.get("cont"):
+        if c.get("cont") or c.get("hidden"):
             continue
         fr_ = frame_rgb(min(c["from"] + 6, c["to"] - 1) / FPS)
         if fr_ is None:
@@ -214,11 +234,46 @@ else:
     # 字直接落在画面上（B 雾、C 渐隐）：量字行范围里「不是字」的像素（去掉接近字色的亮像素），取 95 分位当最坏底
     fg_c = hx(CG["fg"])
     lfg = lum(fg_c)
-    gold_c = hx(TH_.get("dark", "#D8A863"))
-    for c in tl["captions"]:
-        if c.get("cont"):
+    gold_c = hx("#F2C45E") if STYLE == "fullbleed" else hx(TH_.get("dark", "#D8A863"))   # F 包的金是金属渐变，中段 #F2C45E（10-29 提亮后）
+    def _emw(t):
+        return sum(0.3 if ch == " " else 0.6 if re.match(r"[0-9.%]", ch) else 0.56 if ord(ch) < 256 else 1 for ch in t)
+    for c in (tl["captions"] if STYLE == "fullbleed" else []):
+        # F 包按 Caption 的真实排法算每一行的位置和字号：普通 66、开场钩子 84、金银整行 96，过宽按 960 缩（fitSize）
+        if c.get("cont") or c.get("hidden"):
             continue
-        top = CG["topLow"] if c["variant"] in ("g", "p") else CG["top"]
+        host_ = next((x for x in tl["shots"] if x["from"] <= c["from"] < x["to"]), None)
+        low_ = host_ is not None and (host_["type"] in ("G", "I", "P") or host_.get("layout") == "doc")
+        sizes = []
+        for l in c["lines"]:
+            tone_ = l.get("tone") or c.get("tone")
+            base_ = 96 if tone_ else 84 if c.get("hook") else 66
+            sizes.append(max(44, min(base_, int(960 / max(_emw(l["text"]), 0.5)))))
+        block = sum(z * 1.22 for z in sizes) + 10 * (len(sizes) - 1)
+        y = (1380 if low_ else 1118) - block / 2
+        for li_, (l, z) in enumerate(zip(c["lines"], sizes)):
+            fr_ = frame_rgb(min(max(c["from"], l["from"]) + 14, c["to"] - 1) / FPS)
+            lh = z * 1.22
+            if fr_ is not None:
+                w = _emw(l["text"]) * z
+                xa, xb = max(int(540 - w / 2), 0), min(int(540 + w / 2), 1080)
+                strips = ([fr_[max(int(y) - 6, 0):max(int(y) - 1, 0), xa:xb]] if li_ == 0 else []) + \
+                         ([fr_[int(y + lh) + 2:int(y + lh) + 7, xa:xb]] if li_ == len(c["lines"]) - 1 else [])
+                strips = [st_ for st_ in strips if st_.size]
+                if strips:
+                    lb = float(np.percentile(lum_arr(np.concatenate([st_.reshape(-1, 3) for st_ in strips])), 95))
+                    tone_ = l.get("tone") or c.get("tone")
+                    if tone_ == "gold":
+                        meas.append((c["from"], l["text"], 99, cr(gold_c, lb)))
+                    else:
+                        fg_ = (236, 238, 240) if tone_ == "silver" else fg_c
+                        meas.append((c["from"], l["text"], cr(fg_, lb), cr(gold_c, lb) if l["hl"] else 99))
+            y += lh + 10
+    for c in (tl["captions"] if STYLE != "fullbleed" else []):
+        if c.get("cont") or c.get("hidden"):
+            continue
+        host_ = next((x for x in tl["shots"] if x["from"] <= c["from"] < x["to"]), None)
+        low_ = c["variant"] in ("g", "p") or (STYLE == "fullbleed" and host_ is not None and (host_["type"] in ("G", "I", "P") or host_.get("layout") == "doc"))
+        top = CG["topLow"] if low_ else CG["top"]   # F 包：卡片、原文截图在屏时字幕落到低位（Caption 的 lowCap），量的位置要跟着走
         y = top
         for l in c["lines"]:
             fr_ = frame_rgb(min(max(c["from"], l["from"]) + 14, c["to"] - 1) / FPS)
@@ -232,8 +287,14 @@ else:
             lh = CG["size"] * 1.38
             # 只取第一行上方、最后一行下方（两行之间那条会碰到下一行的字）；离开行框 12px，C 的关键词放大 1.22 倍会伸出行框
             li_ = c["lines"].index(l)
-            strips = ([fr_[max(int(y) - 18, 0):max(int(y) - 12, 0), xa:xb]] if li_ == 0 else []) + \
-                     ([fr_[int(y + lh) + 12:int(y + lh) + 18, xa:xb]] if li_ == len(c["lines"]) - 1 else [])
+            if STYLE == "fullbleed":
+                # F 包没有底板，靠字周围 36px 的暗晕托字：量字形外 6–13px 那一圈（人眼对照的局部底），行高按 1.22
+                lh = CG["size"] * 1.22
+                strips = ([fr_[max(int(y) - 6, 0):max(int(y) - 1, 0), xa:xb]] if li_ == 0 else []) + \
+                         ([fr_[int(y + lh) + 2:int(y + lh) + 7, xa:xb]] if li_ == len(c["lines"]) - 1 else [])
+            else:
+                strips = ([fr_[max(int(y) - 18, 0):max(int(y) - 12, 0), xa:xb]] if li_ == 0 else []) + \
+                         ([fr_[int(y + lh) + 12:int(y + lh) + 18, xa:xb]] if li_ == len(c["lines"]) - 1 else [])
             px = np.concatenate([st_.reshape(-1, 3) for st_ in strips if st_.size])
             if px.size < 150:
                 continue
@@ -259,14 +320,15 @@ if meas:
     mw = min(meas, key=lambda x: x[2])
     mg = min(meas, key=lambda x: x[3])
     mins += [mw[2], mg[3]]
-    got = "字幕 白字最低 %.1f（%s「%s」）金字最低 %.1f" % (mw[2], hms(mw[0] / FPS), mw[1][:6], mg[3] if mg[3] < 99 else float("nan"))
+    got = "字幕 白字最低 %.1f（%s「%s」）金字最低 %.1f（%s「%s」）" % (mw[2], hms(mw[0] / FPS), mw[1][:6], mg[3] if mg[3] < 99 else float("nan"), hms(mg[0] / FPS), mg[1][:6])
 else:
     got = "无字幕"
 if mh:
     lb = max(mh)
     mins += [cr(paper, lb), cr(gold, lb)]
     got += "；刊头 白 %.1f 金 %.1f" % (cr(paper, lb), cr(gold, lb))
-add("文字对比度（成片实测）", min(mins) >= 4.5 if mins else None, got, "≥4.5:1")
+_thr = 3.0 if STYLE == "fullbleed" else 4.5   # F 包字幕 66–96px 粗宋＝WCAG「大字」，AA 线 3:1；量的是字形外 6–13px 的局部底
+add("文字对比度（成片实测）", min(mins) >= _thr if mins else None, got, "≥%.1f:1%s" % (_thr, "（F 包大字，WCAG AA）" if STYLE == "fullbleed" else ""))
 
 # 7 安全区：按字数估宽
 over = []
@@ -374,7 +436,11 @@ for s_ in tl["shots"]:
             dup_bad.append("%s %d帧" % (os.path.basename(clip_), n_dup))
         # 镜头内部亮度一帧跳 ≥5 级（素材自带的自动曝光跳变，第 5 轮评审：走廊「闪了两下」）
         dm = np.diff(a_.mean(axis=(1, 2)))
-        jumps = [i + 1 for i in range(len(dm)) if abs(dm[i]) >= 5 and np.median(np.abs(dm[max(0, i - 6):i + 7])) < 1.5]
+        def _uniform(i):
+            # 曝光跳＝整帧一起变亮／变暗（同号像素占大多数）；钞票翻页、手划过是局部在动（10-29：B04 点钞被误判）
+            df_ = a_[i + 1] - a_[i]
+            return float(((np.sign(df_) == np.sign(dm[i])) & (np.abs(df_) > 1)).mean()) >= 0.7
+        jumps = [i + 1 for i in range(len(dm)) if abs(dm[i]) >= 5 and np.median(np.abs(dm[max(0, i - 6):i + 7])) < 1.5 and _uniform(i)]
         if jumps:
             pop_bad.append("%s 第%s帧" % (os.path.basename(clip_), "、".join(map(str, jumps[:4]))))
 add("B-roll 重复帧", not dup_bad, "；".join(dup_bad) or "0", "0（24/25fps 必须逐帧铺进 30fps）")
@@ -490,9 +556,31 @@ if cur:
 mx = max(runs) / FPS if runs else 0
 bl = [(s["to"] - s["from"]) / FPS for s in tl["shots"] if s["type"] in ("B", "S")]
 share_a = 1 - cov.mean()
-add("人脸同一景别最长", mx <= 8.5, "%.1fs" % mx, "≤8.5s")
-add("B-roll 单条长度", all(1.5 <= x <= 6.5 for x in bl) if bl else None, "%.1f–%.1fs" % (min(bl), max(bl)) if bl else "无", "1.6–6.5s")
-add("人脸占比", 0.35 <= share_a <= 0.6, "%.0f%%" % (share_a * 100), "35–60%（参考片 44%）")
+if STYLE == "fullbleed":
+    # F 包（references/11 §三）：满幅人脸可以长，但连续 12 秒里要有一次版面事件（插条／屏上字／金银整行／进度坞／景别变化）
+    ev = set(zoom_cuts) | set(x["from"] for x in tl.get("inserts", []))
+    for x in tl.get("texts", []):
+        ev |= {l["from"] for l in x["lines"]} | {x["from"]}
+    if tl.get("tracker"):
+        ev |= {it["from"] for it in tl["tracker"].get("items", [])}
+    ev |= {c["from"] for c in tl["captions"] if not c.get("hidden") and any(l.get("tone") for l in c["lines"])}
+    gap_mx, run0 = 0, None
+    for i in range(NF + 1):
+        face_ = i < NF and not cov[i]
+        if face_ and run0 is None:
+            run0, last = i, i
+        if run0 is not None and (not face_ or i in ev):
+            gap_mx = max(gap_mx, i - last)
+            last = i
+            if not face_:
+                run0 = None
+    add("满幅人脸无版面事件最长", gap_mx / FPS <= 12, "%.1fs（同一景别最长 %.1fs）" % (gap_mx / FPS, mx), "≤12s（R0 实测）")
+    add("B-roll 单条长度", all(1.5 <= x <= 9.0 for x in bl) if bl else None, "%.1f–%.1fs" % (min(bl), max(bl)) if bl else "无", "1.6–9.0s（F 包）")
+    add("人脸占比", 0.45 <= share_a <= 0.75, "%.0f%%" % (share_a * 100), "45–75%（F 包，R0 61%）")
+else:
+    add("人脸同一景别最长", mx <= 8.5, "%.1fs" % mx, "≤8.5s")
+    add("B-roll 单条长度", all(1.5 <= x <= 6.5 for x in bl) if bl else None, "%.1f–%.1fs" % (min(bl), max(bl)) if bl else "无", "1.6–6.5s")
+    add("人脸占比", 0.35 <= share_a <= 0.6, "%.0f%%" % (share_a * 100), "35–60%（参考片 44%）")
 
 # 10 近空画面（父 skill 的 qa_edge，混合素材用绝对阈值）
 qe = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qa_edge.py")  # 本 skill 自带一份，移植时不依赖父 skill

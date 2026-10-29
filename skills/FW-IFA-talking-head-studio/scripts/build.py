@@ -345,7 +345,7 @@ def conform_extra(pick, t_in, need_s, W, H, name, fx=0.5, fy=0.5, extra=""):
     return "clips/%s.mp4" % name
 
 # F 包：每种画面处理里主素材实际占的框（主素材按这个尺寸裁，不按整窗裁——分带只有 650 高）
-F_MAIN = {"bands3": (1080, 650), "glowband": (1080, 1150)}
+F_MAIN = {"bands3": (1080, 650), "glowband": (1080, 1200)}   # glowband 接缝 10-29 由 1150 下移到 1200（字幕不压接缝）
 F_LAYOUTS = ("full", "band", "bands3", "pip", "glow", "glowband", "ring", "doc")
 
 # 信息卡输出：锚点→帧号；quote 的重点词→字符区间；按卡型查字数（装不下就报，不缩字号、不截断）
@@ -397,7 +397,7 @@ for k, s in enumerate(shots):
         o["label"] = s.get("label") or {"stock": "示意画面", "gen": "AI 生成", "lib": dec.get("lib_label", "示意画面")}.get(kind_, "")
     if s["type"] == "I":
         o["info"] = info_out(s)
-    for key in ("tag", "need", "credit", "figure"):
+    for key in ("tag", "need", "credit", "figure", "text_ok"):   # text_ok：画面里的字是本意（qa 可读文字项豁免）
         if s.get(key):
             o[key] = dict(s[key]) if isinstance(s[key], dict) else s[key]
     # F 包的画面处理：layout（见 references/11 §四）＋方窗位置＋原文截图的高亮框
@@ -523,7 +523,7 @@ for k, s in enumerate(shots):
             # F 包分带／光晕圆＋下条：第二、三条素材（picks 里写，入点 ins）
             if s.get("picks"):
                 lay_ = o.get("layout")
-                sizes = {"bands3": [(1080, 640), (1080, 630)], "glowband": [(1080, 770)]}.get(lay_, [])
+                sizes = {"bands3": [(1080, 640), (1080, 630)], "glowband": [(1080, 720)]}.get(lay_, [])
                 if not sizes:
                     warn.append("%s 写了 picks，但 layout=%s 用不到第二条素材（只有 bands3／glowband 用）" % (s["id"], lay_))
                 ins_ = s.get("ins") or []
@@ -718,7 +718,17 @@ for k in range(len(cards) - 1):
     f0 = int(round(cards[k][0]["s"] * FPS))
     nx = int(round(cards[k + 1][0]["s"] * FPS))
     lack = MINF - (nx - f0)
-    if 0 < lack <= 4:
+    if lack <= 0:
+        continue
+    # 先把这张卡往前提（字比嘴早 ≤6 帧算对位，前一张仍要 ≥0.7s，起点上有剪辑点就不提）；
+    # 不够再把下一张往后推，但最多 1 帧——原来推 4 帧，下一张就晚 2–4 帧（10-29 qa：「性质上属于」晚 2 帧）
+    pf0 = int(round(cards[k - 1][0]["s"] * FPS)) if k > 0 else 0
+    cut_at = any(x["from"] == f0 or x["to"] == f0 for x in out_shots)
+    take = 0 if cut_at else max(0, min(lack, 5, f0 - (pf0 + MINF)))
+    if take:
+        cards[k][0]["s"] = (f0 - take) / FPS
+        lack -= take
+    if 0 < lack <= 1:
         for x in out_shots:
             if x["from"] == nx:
                 x["from"] += lack
@@ -969,6 +979,50 @@ if OUT > 0:
     outro = {"from": NF, "frames": OUT, "cta": (dec.get("end") or {}).get("cta", "")}
     if end:
         end["to"] = NF + OUT
+
+# F 包：皱纸单、堆叠清单、散点关键词在屏时字幕让位；口播里的「第一／第二」正好被步骤标题大字接住时，那张字幕卡也不出（同一处只出一种字）。
+# 标 hidden：画面里不画，qa 也不拿它量停留、对位、对比度（10-29 qa：量的是看不见的字）
+if STYLE == "fullbleed":
+    hide_w = [(x["from"], x["to"]) for x in out_shots if x["type"] == "I" and (x.get("info") or {}).get("surface") == "paper"] + \
+             [(x["from"], x["to"]) for x in texts_out if x["kind"] in ("stack", "scatter")]
+    steps_ = [(x["from"], x["to"], x["lines"][0]["t"]) for x in texts_out if x["kind"] == "step"]
+    for c in final_caps:
+        txt_ = "".join(l["text"] for l in c["lines"]).strip("，。、 ")
+        if any(a_ <= c["from"] < b_ for a_, b_ in hide_w) or any(a_ - 6 <= c["from"] < b_ and txt_ == t_ for a_, b_, t_ in steps_):
+            c["hidden"] = True
+
+# F 包：亮底 B-roll 上字幕托底按亮度加深。量的是字幕那一带（成片 y≈980–1260）在素材里对应的位置，取 3 帧平均亮度：
+# Y≤80 用默认 0.20，往上线性加深，封顶 0.60（10-29 qa：白色建筑肋条、亮楼面上白字实测对比度 1.6）
+if STYLE == "fullbleed":
+    def _zone_y(path, y0, y1, H):
+        try:
+            dur_ = probe(path)["duration"]
+        except Exception:
+            return None
+        vals = []
+        for k_ in (0.25, 0.5, 0.75):
+            r_ = subprocess.run(["ffmpeg", "-v", "error", "-ss", "%.2f" % (dur_ * k_), "-i", path, "-frames:v", "1",
+                                 "-vf", "scale=1080:%d,crop=1080:%d:0:%d,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-" % (H, max(y1 - y0, 2), y0),
+                                 "-f", "null", "-"], capture_output=True, text=True)
+            m_ = re.search(r"YAVG=([\d.]+)", r_.stdout + r_.stderr)
+            if m_:
+                vals.append(float(m_.group(1)))
+        return sum(vals) / len(vals) if vals else None
+    for s_ in out_shots:
+        if s_["type"] not in ("B", "S") or not s_.get("clip"):
+            continue
+        lay_ = s_.get("layout", "full")
+        if lay_ == "doc":
+            continue
+        if lay_ == "bands3":   # 字幕落在中间那条（650–1290），那条用的是 clips[0]
+            src_ = (s_.get("clips") or [None])[0]
+            y_ = _zone_y(P(PUB, src_), 330, 610, 640) if src_ else None
+        elif lay_ == "glowband":
+            y_ = _zone_y(P(PUB, s_["clip"]), 980, 1200, 1200)
+        else:
+            y_ = _zone_y(P(PUB, s_["clip"]), 980, 1260, 1920)
+        if y_ is not None:
+            s_["capScrim"] = round(min(0.60, max(0.20, 0.20 + (y_ - 80) / 140 * 0.40)), 2)
 
 # ---------- 8. 写时间线 ----------
 shutil.copy(P(proj, "work", "aroll_cut.mp4"), P(PUB, "aroll_cut.mp4"))

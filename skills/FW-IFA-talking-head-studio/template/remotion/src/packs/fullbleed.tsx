@@ -30,7 +30,7 @@ export const FB = {
   topBand: 520, bottomBand: 1270,                       // 插条：顶部 0–520／底部 1270–1920
   bands3: [0, 650, 1290, 1920],                         // 三条分带的分界
   glow: {cx: 740, cy: 520, d: 620},                     // 光晕圆：直径 620，圆心偏右上
-  glowband: {cx: 720, cy: 470, d: 560, split: 1150},    // 光晕圆＋下条：上 0–1150，下 1150–1920
+  glowband: {cx: 720, cy: 470, d: 560, split: 1200},    // 光晕圆＋下条：上 0–1200，下 1200–1920（R0 是 1150；字幕中心 1118、字底到 1160，接缝放在字下面，10-29 验收：字压在接缝上）
   pip: {w: 400, h: 520, y: 200, r: 44, frame: 14},      // 方窗：400×520，顶 200，磨砂边 14
   ring: {cx: 900, cy: 300, d: 230, line: 5},            // 细环圆：R1 的新闻画面叙述位
 };
@@ -42,13 +42,17 @@ export const GOLD_DEEP = 'linear-gradient(180deg, #EBBB5A 0%, #D29A30 38%, #B274
 export const SILVER = 'linear-gradient(180deg, #FFFFFF 0%, #F1F2F4 36%, #A7ACB4 58%, #E6E8EB 78%, #FFFFFF 100%)';
 const INK = '#FFFFFF';
 const SHADOW = '0 2px 4px rgba(0,0,0,0.85), 0 4px 18px rgba(0,0,0,0.55)';
+// 字幕专用：再加一圈宽柔影（36px），亮底上字周围自带一层暗晕，不用整条底板（R0 的做法是描边＋柔影，不做色块）
+const CAP_SHADOW = SHADOW + ', 0 0 14px rgba(0,0,0,0.45), 0 0 40px rgba(0,0,0,0.55)';
 const metal = (tone: string): React.CSSProperties => ({
   backgroundImage: tone === 'silver' ? SILVER : GOLD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
 });
 // 金属字没法用 text-shadow（字是透明的），立体感和暖光用 drop-shadow 叠两层
 // 贴一圈深棕细边（亮底上字形不糊），再叠暖光
 const METAL_FX = 'drop-shadow(0 0 1.2px rgba(74,42,6,0.95)) drop-shadow(0 2px 2px rgba(0,0,0,0.62)) drop-shadow(0 0 14px rgba(255,196,110,0.30))';
+const CAP_METAL_FX = METAL_FX + ' drop-shadow(0 0 5px rgba(0,0,0,0.6)) drop-shadow(0 0 18px rgba(0,0,0,0.5))';
 const SILVER_FX = 'drop-shadow(0 3px 3px rgba(0,0,0,0.78)) drop-shadow(0 0 12px rgba(255,255,255,0.22))';
+const CAP_SILVER_FX = SILVER_FX + ' drop-shadow(0 0 5px rgba(0,0,0,0.6)) drop-shadow(0 0 18px rgba(0,0,0,0.5))';
 
 const at = (f: number, a: number, b: number) => f >= a && f < b;
 const shotAt = (f: number): Shot | null => (tl.shots as Shot[]).find((s) => f >= s.from && f < s.to) || null;
@@ -70,10 +74,12 @@ const Scrim: React.FC = () => {
         <div style={{position: 'absolute', left: 0, right: 0, top: 0, height: 330, pointerEvents: 'none',
           background: 'linear-gradient(180deg, rgba(0,0,0,0.40) 0%, rgba(0,0,0,0.20) 52%, rgba(0,0,0,0) 100%)'}} />
       ) : null}
+      {/* 字幕托底：默认 0.20；亮底 B-roll 由 build 量字幕那一带的亮度给 capScrim（0.20–0.55） */}
       <div style={{position: 'absolute', left: 0, right: 0, top: FB.capCY - 170, height: 340, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.20) 38%, rgba(0,0,0,0.20) 62%, rgba(0,0,0,0) 100%)'}} />
-      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 260, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.30) 100%)'}} />
+        background: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,${(s as any)?.capScrim ?? 0.2}) 38%, rgba(0,0,0,${(s as any)?.capScrim ?? 0.2}) 62%, rgba(0,0,0,0) 100%)`}} />
+      {/* 底部托底托住声明：白桌面、白墙这类亮底上 0.30 不够（10-29：声明白字压白桌面看不清），加深到 0.55 */}
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 320, pointerEvents: 'none',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.28) 50%, rgba(0,0,0,0.55) 100%)'}} />
     </>
   );
 };
@@ -103,7 +109,7 @@ const mastheadOn = (f: number, s: Shot | null) => {
 const LineText: React.FC<{l: any; f: number; size: number; tone?: string}> = ({l, f, size, tone}) => {
   const t: string = l.text;
   if (tone) {
-    return <span style={{display: 'inline-block', filter: tone === 'silver' ? SILVER_FX : METAL_FX}}><span style={metal(tone)}>{t}</span></span>;
+    return <span style={{display: 'inline-block', filter: tone === 'silver' ? CAP_SILVER_FX : CAP_METAL_FX}}><span style={metal(tone)}>{t}</span></span>;
   }
   const hl: [number, number][] = l.hl || [];
   const hlAt: number[] = l.hlAt || [];
@@ -111,14 +117,14 @@ const LineText: React.FC<{l: any; f: number; size: number; tone?: string}> = ({l
   let i = 0;
   hl.map((r, k) => ({r, a: hlAt[k] ?? l.from})).sort((x, y) => x.r[0] - y.r[0]).forEach(({r, a}, k) => {
     if (r[0] < i) return;
-    if (r[0] > i) out.push(<span key={'n' + k} style={{textShadow: SHADOW}}>{t.slice(i, r[0])}</span>);
+    if (r[0] > i) out.push(<span key={'n' + k} style={{textShadow: CAP_SHADOW}}>{t.slice(i, r[0])}</span>);
     const on = f >= a;
     out.push(on
-      ? <span key={'h' + k} style={{display: 'inline-block', filter: METAL_FX}}><span style={metal('gold')}>{t.slice(r[0], r[1])}</span></span>
-      : <span key={'h' + k} style={{textShadow: SHADOW}}>{t.slice(r[0], r[1])}</span>);
+      ? <span key={'h' + k} style={{display: 'inline-block', filter: CAP_METAL_FX}}><span style={metal('gold')}>{t.slice(r[0], r[1])}</span></span>
+      : <span key={'h' + k} style={{textShadow: CAP_SHADOW}}>{t.slice(r[0], r[1])}</span>);
     i = r[1];
   });
-  if (i < t.length) out.push(<span key="tail" style={{textShadow: SHADOW}}>{t.slice(i)}</span>);
+  if (i < t.length) out.push(<span key="tail" style={{textShadow: CAP_SHADOW}}>{t.slice(i)}</span>);
   // 祖先的 text-shadow 会画在 background-clip:text 的渐变上面，把金字压成黑铜色（10-29 验片：「备案」）——影子只给白字片段，金属字用 drop-shadow
   return <span>{out}</span>;
 };
@@ -155,7 +161,7 @@ const hideCaption = (f: number, s?: any) => textsAt(f).some((x: any) => x.kind =
 // ---------- ③ 底部声明 ----------
 const Foot: React.FC = () => (
   <div style={{position: 'absolute', left: 0, right: 0, top: FB.footCY - FB.footSize * 0.7, textAlign: 'center', fontFamily: F.serif, fontWeight: 600,
-    fontSize: FB.footSize, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.62)', textShadow: '0 2px 8px rgba(0,0,0,0.6)'}}>
+    fontSize: FB.footSize, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.72)', textShadow: '0 1px 3px rgba(0,0,0,0.75), 0 2px 10px rgba(0,0,0,0.55)'}}>
     {tl.disclaimer || '本内容仅作为科普，不构成任何投资建议'}
   </div>
 );
@@ -229,7 +235,7 @@ const BRoll: React.FC<{s: any}> = ({s}) => {
         <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height: sp, overflow: 'hidden'}}><Media src={s.clip} img={s.img} move={move} p={p} /></div>
         <div style={{position: 'absolute', left: 0, top: sp, width: 1080, height: 1920 - sp, overflow: 'hidden',
           clipPath: `inset(${interpolate(f, [0, 9], [100, 0], {...clamp, easing: ease.out})}% 0 0 0)`}}>
-          {(s.clips || [])[0] ? <Media src={s.clips[0]} move="pan-r" p={p} /> : null}
+          {(s.clips || [])[0] ? <Media src={s.clips[0]} move="pan-r" p={p} dim="brightness(0.86) saturate(1.0) contrast(1.04)" /> : null}
         </div>
         <Seam y={sp} />
       </AbsoluteFill>
@@ -466,17 +472,34 @@ const Layers: React.FC<{f: number; s: Shot | null}> = ({f, s}) => (
 );
 
 // ---------- G 标题卡／数字卡（R1 的章节卡：暗底、金尘、光束，金属大字＋英文副行）----------
-const TitleBg: React.FC<{local: number}> = ({local}) => {
+// under：数字卡／词卡底下垫一层她本人的虚化原片（同步、压暗），卡在屏的 2–3 秒画面不冻（10-29 qa：三张大字卡各冻 2–3s）
+const TitleBg: React.FC<{local: number; under?: boolean}> = ({local, under}) => {
   const dots = React.useMemo(() => Array.from({length: 120}, (_, i) => {
     const r = (n: number) => { const x = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
     return {x: r(1) * 1080, y: r(2) * 1920, s: 1 + r(3) * 3, a: 0.25 + r(4) * 0.6, v: 0.3 + r(5) * 0.8};
   }), []);
+  // 金色光斑：缓慢上浮、左右轻摆、明暗呼吸——卡在屏 2–3 秒，背景始终在动（文字层不动）
+  const orbs = React.useMemo(() => Array.from({length: 16}, (_, i) => {
+    const r = (n: number) => { const x = Math.sin(i * 91.17 + n * 13.7) * 24634.6345; return x - Math.floor(x); };
+    return {x: r(1) * 1080, y: r(2) * 2100, r: 34 + r(3) * 80, v: 1.4 + r(4) * 1.6, a: 0.45 + r(5) * 0.45};
+  }), []);
   return (
     <AbsoluteFill style={{background: 'radial-gradient(70% 45% at 50% 46%, #3A2C18 0%, #17110A 55%, #080605 100%)', overflow: 'hidden'}}>
+      {under ? <>
+        <OffthreadVideo src={staticFile(tl.aroll.src)} muted style={{position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+          filter: 'blur(26px) brightness(0.55) saturate(0.7)', transform: `scale(${1.12 + 0.0006 * local})`}} />
+        <div style={{position: 'absolute', inset: 0, background: 'radial-gradient(70% 45% at 50% 46%, rgba(58,44,24,0.55) 0%, rgba(23,17,10,0.72) 55%, rgba(8,6,5,0.86) 100%)'}} />
+      </> : null}
       <div style={{position: 'absolute', left: -540, top: -40, width: 2160, height: 2000, opacity: 0.28,
         background: 'repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,214,150,0.0) 0deg, rgba(255,214,150,0.35) 2deg, rgba(255,214,150,0.0) 5deg, rgba(255,214,150,0.0) 14deg)',
-        transform: `rotate(${local * 0.06}deg)`, WebkitMaskImage: 'radial-gradient(circle at 50% 50%, #000 0%, transparent 46%)',
+        transform: `rotate(${local * 0.16}deg)`, WebkitMaskImage: 'radial-gradient(circle at 50% 50%, #000 0%, transparent 46%)',
         maskImage: 'radial-gradient(circle at 50% 50%, #000 0%, transparent 46%)'}} />
+      {orbs.map((o, i) => (
+        <div key={'o' + i} style={{position: 'absolute', left: o.x + Math.sin(local / 40 + i) * 26 - o.r, top: ((o.y - local * o.v) % 2100 + 2100) % 2100 - 120 - o.r,
+          width: o.r * 2, height: o.r * 2, borderRadius: '50%', filter: 'blur(6px)',
+          background: 'radial-gradient(circle, rgba(246,218,160,0.55) 0%, rgba(246,218,160,0.18) 55%, rgba(246,218,160,0) 72%)',
+          opacity: o.a * (0.65 + 0.35 * Math.sin(local / 14 + i * 1.7))}} />
+      ))}
       {dots.map((d, i) => (
         <div key={i} style={{position: 'absolute', left: d.x, top: (d.y - local * d.v * 1.2 + 1920) % 1920, width: d.s, height: d.s, borderRadius: d.s,
           background: '#F3D59A', opacity: d.a * (0.6 + 0.4 * Math.sin(local / 9 + i))}} />
@@ -497,7 +520,7 @@ const Figure: React.FC<{f: number; s: Shot}> = ({f, s}) => {
   const yMid = 780;   // 整块落在 1300 以上，给低位字幕（1440）让出地方
   return (
     <AbsoluteFill>
-      {!s.bg ? <TitleBg local={local} /> : null}
+      {!s.bg ? <TitleBg local={local} under /> : null}
       <div style={{position: 'absolute', left: 0, right: 0, top: yMid - size * 0.5 - 120, display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
         {fig.label ? <div style={{clipPath: `inset(0 ${lab}% 0 0)`, fontFamily: F.serif, fontWeight: 600, fontSize: 40, letterSpacing: '0.18em',
           color: '#E8C27F', textShadow: '0 2px 10px rgba(0,0,0,0.6)', whiteSpace: 'nowrap', marginBottom: 34}}>{fig.label}</div> : null}

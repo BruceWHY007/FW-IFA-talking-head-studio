@@ -153,7 +153,7 @@ export const Film: React.FC = () => {
   const onB = !!s && (['B', 'S'].includes(s.type) || (s.type === 'G' && !!s.bg));
   const showMast = tl.masthead && (pack.mastheadOn ? pack.mastheadOn(f, s) : (pack.mastheadOnB !== false || !onB) && !(inCover && pack.name !== 'editorial'));
   // 落版开始后要不要继续画字幕由包决定（有落版文案的包会和字幕打架）；包也可以在某些帧让字幕让位（堆叠清单、散点关键词）
-  const caps = (tl.captions as Cap[]).filter((c) => f >= c.from && f < c.to && !(pack.capsAfterEnd === false && tl.end && f >= tl.end.from))
+  const caps = (tl.captions as Cap[]).filter((c) => !(c as any).hidden && f >= c.from && f < c.to && !(pack.capsAfterEnd === false && tl.end && f >= tl.end.from))
     .filter(() => !(pack.hideCaption && pack.hideCaption(f, s)));
   const P = pack;
   return (
