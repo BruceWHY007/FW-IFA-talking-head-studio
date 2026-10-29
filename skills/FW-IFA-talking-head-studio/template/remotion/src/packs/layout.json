@@ -1,5 +1,5 @@
 {
-  "_说明": "六套风格包的版面骨架（1080×1920）。window＝画面窗 [x, y, w, h]；faceY＝人脸中心落在画面窗高度的哪个位置（null＝保持原片位置）；maxChars＝字幕每行字数上限（右沿不压进右侧互动栏）；build.py 按 window 尺寸归一化 B-roll。代号：A editorial／B glass／C kinetic／K1 evidence／K2 diagram／K3 brand。 infoCard／presenter／figureCard／caption 给 qa.py 用（冻结只量该动的区域、字幕对比度按各包的字幕几何量），改了包里的位置要同步这里。",
+  "_说明": "六套风格包的版面骨架（1080×1920）。window＝画面窗 [x, y, w, h]；faceY＝人脸中心落在画面窗高度的哪个位置（null＝保持原片位置）；maxChars＝字幕每行字数上限（右沿不压进右侧互动栏）；build.py 按 window 尺寸归一化 B-roll。代号：A editorial／B glass／C kinetic／K1 evidence／K2 diagram／K3 brand／F fullbleed。 infoCard／presenter／figureCard／caption 给 qa.py 用（冻结只量该动的区域、字幕对比度按各包的字幕几何量），改了包里的位置要同步这里。",
   "editorial": {
     "window": [
       0,
@@ -217,5 +217,47 @@
       "size": 56,
       "ink": "#1d1611"
     }
+  },
+  "fullbleed": {
+    "window": [
+      0,
+      0,
+      1080,
+      1920
+    ],
+    "faceY": null,
+    "maxChars": 12,
+    "capLines": 1,
+    "bandY": 300,
+    "label": "F · 满幅讲述 v2",
+    "code": "F",
+    "coverInWindow": true,
+    "infoCard": [
+      72,
+      420,
+      936,
+      760
+    ],
+    "presenter": [
+      785,
+      150,
+      230,
+      230
+    ],
+    "figureCard": [
+      90,
+      560,
+      900,
+      700
+    ],
+    "caption": {
+      "mode": "overlay",
+      "top": 1078,
+      "topLow": 1340,
+      "align": "center",
+      "size": 66,
+      "fg": "#FFFFFF"
+    },
+    "_规格": "references/11_F满幅讲述_规格与约束.md"
   }
 }

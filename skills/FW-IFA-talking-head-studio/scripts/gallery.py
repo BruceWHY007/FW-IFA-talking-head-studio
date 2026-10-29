@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """风格目录：同一份示范内容，在六套风格包里各渲一组关键帧，拼成一张对比图，给人挑风格用。
 
-    python3 gallery.py <工程目录> [--packs A,B,C,K1,K2,K3] [--sample 示范内容.json] [--theme 维港青]
+    python3 gallery.py <工程目录> [--packs F,A,B,C,K1,K2,K3] [--sample 示范内容.json] [--theme 维港青]
 
 需要一个已经 build 过的工程（借它剪好的人脸原片）。示范内容默认是 template/gallery_sample.json（选题库 05）。
 产物：out/风格目录/<代号>.jpg（每套 8 帧）与 out/风格目录/总览.jpg。
@@ -13,7 +13,7 @@ from kb import P, SKILL, run, load, save, die
 
 ap = argparse.ArgumentParser()
 ap.add_argument("proj")
-ap.add_argument("--packs", default="A,B,C,K1,K2,K3")
+ap.add_argument("--packs", default="F,A,B,C,K1,K2,K3")
 ap.add_argument("--sample", default=os.path.join(SKILL, "template", "gallery_sample.json"))
 ap.add_argument("--theme", default="", help="给能换色的包（A／B／C／K2）套一个账号主题看效果")
 a = ap.parse_args()
@@ -21,8 +21,8 @@ proj = os.path.abspath(a.proj)
 R = P(proj, "remotion")
 if not os.path.exists(P(R, "public", "aroll_cut.mp4")):
     die("先对这个工程跑一次 build.py（目录要借剪好的人脸原片）")
-ALIAS = {"A": "editorial", "B": "glass", "C": "kinetic", "K1": "evidence", "K2": "diagram", "K3": "brand"}
-NAMES = {"A": "A 分带刊物", "B": "B 雾金玻璃", "C": "C 港刊大字", "K1": "K1 证据桌", "K2": "K2 图解", "K3": "K3 IFA 品牌刊"}
+ALIAS = {"F": "fullbleed", "A": "editorial", "B": "glass", "C": "kinetic", "K1": "evidence", "K2": "diagram", "K3": "brand"}
+NAMES = {"F": "F 满幅讲述（默认）", "A": "A 分带刊物", "B": "B 雾金玻璃", "C": "C 港刊大字", "K1": "K1 证据桌", "K2": "K2 图解", "K3": "K3 IFA 品牌刊"}
 sm = load(a.sample)
 base_tl = load(P(R, "src", "timeline.json"))
 THEMES = {k: v for k, v in load(P(R, "src", "packs", "themes.json")).items() if not k.startswith("_")}
@@ -82,7 +82,7 @@ for code in codes:
     style = ALIAS[code]
     cv = dict(sm["cover"], frames=60, trans=12, sub="", scale=1.12, form=sm.get("cover_forms", {}).get(code, "title"))
     tl = {"fps": 30, "width": 1080, "height": 1920, "durationInFrames": DUR, "style": style, "outro": None,
-          "coverInWindow": style not in ("glass", "kinetic"), "theme": theme, "account": "",
+          "coverInWindow": style not in ("glass", "kinetic", "fullbleed"), "theme": theme, "account": "",
           "aroll": base_tl["aroll"], "shots": shots, "arollZoom": [], "captions": caps, "masthead": sm["masthead"],
           "nametag": {"from": 80, "to": 200, "name": sm["speaker"]["name"], "latin": "", "lines": sm["speaker"]["lines"]},
           "cover": cv, "end": None, "tags": [], "sfx": [], "chapters": [], "emph": []}
@@ -101,7 +101,7 @@ for code in codes:
     rows.append(row)
     print("✓ %s → out/风格目录/%s.jpg" % (NAMES[code], code))
 # 总览按 A→K3 的顺序拼目录里已有的每一套（只补渲几套时，其余沿用上次的图）
-rows = [Image.open(P(outdir, "%s.jpg" % c)) for c in ["A", "B", "C", "K1", "K2", "K3"] if os.path.exists(P(outdir, "%s.jpg" % c))]
+rows = [Image.open(P(outdir, "%s.jpg" % c)) for c in ["F", "A", "B", "C", "K1", "K2", "K3"] if os.path.exists(P(outdir, "%s.jpg" % c))]
 W = max(r.width for r in rows)
 sheet = Image.new("RGB", (W, sum(r.height for r in rows)), "#161616")
 y = 0

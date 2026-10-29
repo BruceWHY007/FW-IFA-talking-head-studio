@@ -10,11 +10,12 @@ import {kinetic} from './packs/kinetic';
 import {evidence} from './packs/evidence';
 import {diagram} from './packs/diagram';
 import {brand} from './packs/brand';
+import {fullbleed} from './packs/fullbleed';
 
 // 一切时间都来自 timeline.json（build.py 生成，单一真源）。这里只负责「在第 f 帧画什么」；长什么样由风格包决定。
 const tl: any = tlRaw;
 loadFonts();
-const PACKS: Record<string, any> = {editorial, glass: glassPack, kinetic, evidence, diagram, brand};
+const PACKS: Record<string, any> = {editorial, glass: glassPack, kinetic, evidence, diagram, brand, fullbleed};
 const pack = PACKS[tl.style || 'editorial'] || editorial;
 const WIN = pack.win;
 
@@ -51,7 +52,7 @@ const ARoll: React.FC = () => {
   const base = (tl.aroll.frame && tl.aroll.frame.scale) || 1;
   let k = kAt(f);
   const cv = tl.cover;
-  if (cv && f < cv.frames + cv.trans) {
+  if (cv && !pack.noCover && f < cv.frames + cv.trans) {
     k = base * interpolate(f, [cv.frames, cv.frames + cv.trans], [cv.scale || 1.12, 1], {...clamp, easing: ease.inOut});
   }
   // 卡片镜的底：大字卡、照片卡，以及「讲解人留在原位虚化」的信息卡（A／B／C）
@@ -60,7 +61,7 @@ const ARoll: React.FC = () => {
   // （第 5 轮 qa：推得太慢＋压得太暗，数字落定后画面窗就是死的；第 6 轮样片：5.4 秒的时间线卡后面几乎不动）
   const infoUnder = !!s && s.type === 'I';
   if (under) k = infoUnder ? base * (1.06 + 0.0025 * Math.max(f - s!.from, 0)) : base * interpolate(f, [s!.from, s!.to], [1.06, 1.22], clamp);
-  const underBlur = infoUnder ? (pack.info && pack.info.areaCard && pack.info.areaCard.length ? 3 : 5) : 6;
+  const underBlur = pack.underBlur != null && !infoUnder ? pack.underBlur : infoUnder ? (pack.info && pack.info.areaCard && pack.info.areaCard.length ? 3 : 5) : 6;
   // 「手机里的她」：背景是她本人虚化压暗（满窗在动），手机里是清晰的她；手机与背景一起缓推
   if (s && s.type === 'PH' && pack.phone) {
     const ph = pack.phone;
@@ -80,7 +81,7 @@ const ARoll: React.FC = () => {
     );
   }
   // 封面占了画面窗上部的包（K2）：封面期间人脸放低，封面收起时随推回一起回到正常位置
-  const fyNow = cv && pack.coverFaceY != null && f < cv.frames + cv.trans
+  const fyNow = cv && !pack.noCover && pack.coverFaceY != null && f < cv.frames + cv.trans
     ? interpolate(f, [cv.frames, cv.frames + cv.trans], [pack.coverFaceY, pack.faceY], {...clamp, easing: ease.inOut}) : pack.faceY;
   const r = faceFit(WIN, face, k, fyNow);
   return (
@@ -150,8 +151,10 @@ export const Film: React.FC = () => {
   const s = shotAt(f);
   const inCover = tl.cover && f < tl.cover.frames + tl.cover.trans;
   const onB = !!s && (['B', 'S'].includes(s.type) || (s.type === 'G' && !!s.bg));
-  const showMast = tl.masthead && (pack.mastheadOnB !== false || !onB) && !(inCover && pack.name !== 'editorial');
-  const caps = (tl.captions as Cap[]).filter((c) => f >= c.from && f < c.to);
+  const showMast = tl.masthead && (pack.mastheadOn ? pack.mastheadOn(f, s) : (pack.mastheadOnB !== false || !onB) && !(inCover && pack.name !== 'editorial'));
+  // 落版开始后要不要继续画字幕由包决定（有落版文案的包会和字幕打架）；包也可以在某些帧让字幕让位（堆叠清单、散点关键词）
+  const caps = (tl.captions as Cap[]).filter((c) => f >= c.from && f < c.to && !(pack.capsAfterEnd === false && tl.end && f >= tl.end.from))
+    .filter(() => !(pack.hideCaption && pack.hideCaption(f, s)));
   const P = pack;
   return (
     <AbsoluteFill style={{background: P.canvas}}>
@@ -161,16 +164,18 @@ export const Film: React.FC = () => {
         <ARoll />
         {(tl.shots as Shot[]).filter((x) => x.type === 'B' || x.type === 'S' || (x.type === 'G' && x.bg)).map((x) => (
           <Sequence key={x.id} from={x.from} durationInFrames={x.to - x.from}>
-            <BRoll s={x.type === 'G' ? {...x, clip: x.bg} : x} />
+            {P.BRoll ? <P.BRoll s={x.type === 'G' ? {...x, clip: x.bg} : x} /> : <BRoll s={x.type === 'G' ? {...x, clip: x.bg} : x} />}
           </Sequence>
         ))}
         {s && s.type === 'G' && s.figure ? <P.Figure f={f} s={s} /> : null}
         {s && s.type === 'P' ? <P.Photo f={f} s={s} /> : null}
         {s && s.type === 'I' && P.Info ? <P.Info f={f} s={s} face={tl.aroll.face || {cx: 0.5, cy: 0.42}} src={tl.aroll.src} /> : null}
       </div>
+      {s && ['B', 'S'].includes(s.type) && P.Pip ? <P.Pip f={f} s={s} /> : null}
       {P.Over ? <P.Over /> : null}
       {showMast ? <P.Masthead f={f} series={tl.masthead.series} episode={tl.masthead.episode} end={tl.end} chapters={tl.chapters}
         coverEnd={tl.cover && tl.coverInWindow ? tl.cover.frames : 0} /> : null}
+      {P.Layers ? <P.Layers f={f} s={s} /> : null}
       {s && (s as any).split && P.SplitLabels && f >= (s as any).split.at ? <P.SplitLabels f={f} at={(s as any).split.at} labels={(s as any).split.labels || []} /> : null}
       {s && (s as any).label && P.Label ? <P.Label f={f} from={s.from} text={(s as any).label} /> : null}
       {s && s.type === 'PH' && P.PhoneFrame ? <P.PhoneFrame f={f} s={s} /> : null}
@@ -180,7 +185,7 @@ export const Film: React.FC = () => {
       {caps.map((c, i) => <P.Caption key={c.from + '_' + i} cap={c} f={f} />)}
       {tl.outro && tl.outro.cta && f >= tl.outro.from ? <P.Caption f={f} cap={{from: tl.outro.from, to: tl.durationInFrames, variant: 'a', animate: true,
         lines: [{text: tl.outro.cta, from: tl.outro.from, hl: [[0, String(tl.outro.cta).length]], hlAt: [tl.outro.from]} as any]}} /> : null}
-      {tl.cover ? <P.Cover f={f} d={tl.cover} /> : null}
+      {tl.cover && !P.noCover ? <P.Cover f={f} d={tl.cover} /> : null}
       <AbsoluteFill style={{backgroundImage: `url(${staticFile('grain.png')})`, mixBlendMode: 'overlay', opacity: 0.06, pointerEvents: 'none'}} />
     </AbsoluteFill>
   );

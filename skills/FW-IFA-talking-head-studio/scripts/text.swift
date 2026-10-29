@@ -6,6 +6,10 @@ import Vision
 import AppKit
 
 let dir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
+// 阈值可调（默认 4 字／0.5，给 qa 用）；素材体检用 OCR_MIN_CHARS=3 OCR_MIN_CONF=0.3（缩略图上的字小，宁可多报）
+let env = ProcessInfo.processInfo.environment
+let minChars = Int(env["OCR_MIN_CHARS"] ?? "") ?? 4
+let minConf = Float(env["OCR_MIN_CONF"] ?? "") ?? 0.5
 let fm = FileManager.default
 let files = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasSuffix(".jpg") }.sorted()
 var result: [String: [[String: Any]]] = [:]
@@ -27,7 +31,7 @@ for f in files {
         let s = top.string.trimmingCharacters(in: .whitespacesAndNewlines)
         // 纯数字/符号、过短的都不算「可读文字」（计数器、时间码、纹理常被识别成一两个字符）
         let letters = s.filter { $0.isLetter || $0.isNumber }
-        if letters.count < 4 || top.confidence < 0.5 { continue }
+        if letters.count < minChars || top.confidence < minConf { continue }
         let b = o.boundingBox
         hits.append(["t": s, "c": Double(top.confidence),
                      "x": Double(b.origin.x), "y": Double(1 - b.origin.y - b.size.height),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""风格目录：**人把原片递过来时，用他自己的画面渲一张六套风格的对比图**，让他挑。
+"""风格目录：**人把原片递过来时，用他自己的画面渲一张七套风格的对比图**，让他挑。
 
     python3 catalog.py --video <原片.mp4> [--seconds 6] [--keep]   # 生成目录（约 2–4 分钟）
     python3 catalog.py                                             # 只打印菜单与用法（不渲）
@@ -21,7 +21,8 @@ ap.add_argument("--keep", action="store_true", help="保留临时工程，方便
 a = ap.parse_args()
 
 CACHE = os.path.expanduser("~/.cache/ifa-koubo/catalog")
-PACKS = [("A", "A 分带刊物", "上下纸带，字永远不压画面", "个人近况、生活、经历"),
+PACKS = [("F", "F 满幅讲述（默认）", "她满幅在说＋小窗／分带／B-roll 轮换，数据上玻璃卡，重话金银字", "观点讲述、政策解读、财经科普"),
+         ("A", "A 分带刊物", "上下纸带，字永远不压画面", "个人近况、生活、经历"),
          ("B", "B 雾金玻璃", "满幅实拍＋雾＋液态玻璃", "活动、开业、品牌宣传"),
          ("C", "C 港刊大字", "满幅＋书脊线＋宋体大字", "热点、观点、金句"),
          ("K1", "K1 证据桌", "桌面纸纹、撕边剪报、荧光笔", "政策、新闻、报告原文"),
@@ -32,14 +33,14 @@ PACKS = [("A", "A 分带刊物", "上下纸带，字永远不压画面", "个人
 def menu():
     print("== 风格目录：先给用户看，再开工 ==")
     print("跑：python3 scripts/catalog.py --video <用户的原始口播.mp4>")
-    print("它会用**用户自己的画面**渲一张六套风格的对比图（约 2–4 分钟），把那张图发给用户，等一个代号。")
+    print("它会用**用户自己的画面**渲一张七套风格的对比图（约 2–4 分钟），把那张图发给用户，等一个代号。")
     print("")
     for code, name, one, good in PACKS:
         print("  %-3s %-12s %s｜适合：%s" % (code, name, one, good))
     print("")
     print("底部分三种，默认 paper：paper＝整页纸、不留色块；fade＝100px 深底＋渐深；plate＝160px 深底。")
     print("  只有发抖音／视频号（白字描述压在画面上）才需要 fade 或 plate，写进 decompose.footer。")
-    print("回法：`A` / `K1` 这样一行；要深底就补一个词，例如 `A fade`。不回就按 suggest_style 第一名做。")
+    print("回法：`A` / `K1` 这样一行；要深底就补一个词，例如 `A fade`。不回、或回「默认」，就用 F 满幅讲述。")
 
 
 if not a.video:
@@ -124,6 +125,6 @@ stable = P(CACHE, "总览.jpg")
 shutil.copy(over, stable)
 print("")
 print("✓ 风格目录（用这位用户自己的画面）→ %s" % stable)
-print("  把这张图发给用户，等一个代号：A / B / C / K1 / K2 / K3")
+print("  把这张图发给用户，等一个代号：F（默认）/ A / B / C / K1 / K2 / K3；不回就是 F")
 if not a.keep:
     shutil.rmtree(P(proj, "work", "_face"), ignore_errors=True)

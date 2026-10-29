@@ -1,6 +1,6 @@
 ---
 name: FW-IFA-talking-head-studio
-description: 把一条真人口播原片（手机或相机拍的对镜头讲话）做成有设计感的竖版成片：转写校对 → 拆 A-roll（哪句留脸、哪句盖 B-roll、盖什么信息）→ 剪口癖压停顿 → B-roll 三路来源（用户素材库挑选／免费素材库检索／AI 生成接口，生成渠道按配置接入、默认不调）→ 六套风格包按内容选（A 分带刊物／B 雾金玻璃／C 港刊大字／K1 证据桌／K2 图解／K3 IFA 品牌刊），账号主题区分不同的人，每一支按内容换封面形式和信息卡（原文／对比／清单／时间线／柱图）、按账号登记错开，不出一模一样的片子；刊头、字幕、名字条、标注、分屏、大字卡与跟着说话走的动态 → 配乐避让与 −14 LUFS → 量化验收＋接缝检查＋独立评审子代理。结构基准拆自复星财富 IFA 财经口播参考片，设计借 IFA App 展示片「视觉带与文字带分开」升级。用户给一条口播视频说「做成片」「包装一下」「加 B-roll」「按那支参考片的样子做」「口播成片」「口播剪辑包装」时使用。不归这里：没有原片、要从内容或口播稿生成整片 → IFA-AI人物视频／video-talkcraft；只写口播稿 → IFA口播选题库；要在 ChatCut 编辑器里可编辑交付 → chatcut:talking-head-guide；只要一条生成提示词 → seedance-20／cinematic-video-prompt-engineer。
+description: 把一条真人口播原片（手机或相机拍的对镜头讲话）做成有设计感的竖版成片：转写校对 → 拆 A-roll（哪句留脸、哪句盖 B-roll、盖什么信息）→ 剪口癖压停顿 → B-roll 三路来源（用户素材库挑选／免费素材库检索／AI 生成接口，生成渠道按配置接入、默认不调）→ 七套风格包按内容选（**F 满幅讲述＝默认**／A 分带刊物／B 雾金玻璃／C 港刊大字／K1 证据桌／K2 图解／K3 IFA 品牌刊），账号主题区分不同的人，每一支按内容换封面形式和信息卡（原文／对比／清单／时间线／柱图）、按账号登记错开，不出一模一样的片子；刊头、字幕、名字条、标注、分屏、大字卡与跟着说话走的动态 → 配乐避让与 −14 LUFS → 量化验收＋接缝检查＋独立评审子代理。结构基准拆自复星财富 IFA 财经口播参考片，设计借 IFA App 展示片「视觉带与文字带分开」升级。用户给一条口播视频说「做成片」「包装一下」「加 B-roll」「按那支参考片的样子做」「口播成片」「口播剪辑包装」时使用。不归这里：没有原片、要从内容或口播稿生成整片 → IFA-AI人物视频／video-talkcraft；只写口播稿 → IFA口播选题库；要在 ChatCut 编辑器里可编辑交付 → chatcut:talking-head-guide；只要一条生成提示词 → seedance-20／cinematic-video-prompt-engineer。
 ---
 
 # FW-IFA 口播成片 · talking-head-studio
@@ -39,12 +39,12 @@ description: 把一条真人口播原片（手机或相机拍的对镜头讲话�
 python3 scripts/catalog.py --video <用户的原片>
 ```
 
-它**用用户自己的画面**（取一帧正脸）在六套风格里各渲 8 帧，拼成一张 `总览.jpg`（约 2–4 分钟），把**这一张图**发给用户，
-等一个代号（`A`／`B`／`C`／`K1`／`K2`／`K3`）。拿到代号再往下走，`decompose.style` 写它选的。
+它**用用户自己的画面**（取一帧正脸）在七套风格里各渲 8 帧，拼成一张 `总览.jpg`（约 2–4 分钟），把**这一张图**发给用户，
+等一个代号（`F`／`A`／`B`／`C`／`K1`／`K2`／`K3`）。**用户不回、或回「默认」，就是 `F` 满幅讲述**；拿到代号再往下走，`decompose.style` 写它选的（不写＝F）。
 **不要用别人片子的脸做样片**——目录里的人必须是这位用户本人；包内也不预置目录图。
 底部默认 `paper`（整页纸）；只有发抖音／视频号这类会把白字描述压在画面上的平台，才在 `decompose.footer` 改 `fade`／`plate`（见 04）。
 等 ingest 完成、有他的逐字稿之后，再跑一次 `style_pick.py` 用**他的原话**把候选渲出来确认（见 ④.5）。
-unattended 模式用 `suggest_style` 第一名、底部 `paper`，并在交付里标「拟」。账号主题问一句或从登记里沿用；配色不单独问。工程放进对应项目的子目录，不放桌面根目录；同一账号的工程放在同一个上级目录（登记文件在那里）。
+unattended 模式用 `suggest_style` 第一名（F 有保底分，没有明显信号时就是它）、底部 `paper`，并在交付里标「拟」。账号主题问一句或从登记里沿用；配色不单独问。工程放进对应项目的子目录，不放桌面根目录；同一账号的工程放在同一个上级目录（登记文件在那里）。
 
 ---
 
@@ -59,11 +59,11 @@ unattended 模式用 `suggest_style` 第一名、底部 `paper`，并在交付�
 | ② 导入转写 | 归一化（竖版 30fps，HDR 转 SDR）、逐字转写、能量包络与停顿 | `ingest.py 工程 --prompt "专有名词"` | transcript.json、work/sheet_2s.jpg |
 | ③ **校对** | 改 transcript.json 的 text（人名、机构、中英混说、数字），加 `_corrected` | 人工（Claude） | 校对后的句表＋`_校对备注` |
 | ④ 拆 A-roll | 逐句量人脸朝向、清晰度、手势、语速、口癖、重说 | `analyze.py 工程` | work/aroll_sheet.jpg（逐句一格带标签） |
-| ④.5 **风格复核** ◆ | 有他自己的素材之后，把候选风格用**他的脸**渲出来确认（六套各 4 帧：人脸／B-roll／大字卡／信息卡）；与他 ⓪ 步选的不一致就问他 | `suggest_style.py 工程` → `style_pick.py 工程` → 人 | out/风格目录/选择单.jpg、选择单.md；decompose.json 的 `style` |
+| ④.5 **风格复核** ◆ | 有他自己的素材之后，把候选风格用**他的脸**渲出来确认（七套各 4 帧：人脸／B-roll／大字卡／信息卡）；与他 ⓪ 步选的不一致就问他 | `suggest_style.py 工程` → `style_pick.py 工程` → 人 | out/风格目录/选择单.jpg、选择单.md；decompose.json 的 `style` |
 | ⑤ **判定** ◆ | 按已选的风格包写 edits.json（剪什么）与 decompose.json（主题、账号、每一镜是什么、配什么）——规则见 `02`、`04` §〇 | 人工（Claude） | 两份 json，每镜有 `why` |
 | ⑥ 粗剪 | 剪口癖、删重说、压停顿；画面声音同一张 EDL 按帧剪 | `trim.py 工程 --dry-run` → `trim.py 工程 --verify` | aroll_cut.mp4、voice_cut.wav、剪后复核 |
 | ⑦ B-roll | 用户素材索引挑片／免费素材检索下载／生成出卡或调用 | `broll_index.py`、`stock.py`、`gen_video.py` | broll/ 下的素材与登记 |
-| ⑧ 风格方向 ◆ | 账号没定过风格或主题时：出风格目录（同一份示范内容在六套里各 8 帧）给人挑；要看这条片子本身就用 `--decompose` 出几个版本的样片 | `gallery.py 工程 [--packs … --theme …]`；`make.py 工程 --decompose decompose_K2.json --out 样片_K2.mp4 --no-register` | out/风格目录/、out/样片_*.mp4 |
+| ⑧ 风格方向 ◆ | 账号没定过风格或主题时：出风格目录（同一份示范内容在七套里各 8 帧）给人挑；要看这条片子本身就用 `--decompose` 出几个版本的样片 | `gallery.py 工程 [--packs … --theme …]`；`make.py 工程 --decompose decompose_K2.json --out 样片_K2.mp4 --no-register` | out/风格目录/、out/样片_*.mp4 |
 | ⑨ 声音 ◆ | 人声整理、配乐避让、合成音效、−14 LUFS | `mix.py 工程 --bgm 配乐 --bgm-in 秒` | audio/mix.wav、music_only.wav |
 | ⑩ 整片＋验收 | 渲整片、跑质量线、出接缝检查图 | `make.py 工程 --bgm …`（build→mix→render→qa），`seams.py 工程` | out/成片_9x16.mp4、qa/qa_report.md、qa/接缝检查.jpg、两张抽帧图 |
 | ⑪ **评审循环** | 派全新评审子代理 → 修最大的问题 → 重渲 → 再派新评审查全部 | 见 `06` §二 | qa/评审_第N轮.md、ledger.md |
@@ -100,7 +100,8 @@ AI 生成的渠道全在 `template/gen_providers.json`（RunningHub 应用／Run
 
 | 风格包 | 适合 | 一句话 |
 |---|---|---|
-| **A 分带刊物**（默认） | 个人近况、经历 | 上刊头、中画面窗、下字幕带，字永远不压画面 |
+| **F 满幅讲述**（**默认**） | 观点讲述、政策解读、财经科普 | 她满幅在说，小窗／分带／B-roll 轮换，数据上玻璃卡，重话金银字；规格见 `references/11` |
+| **A 分带刊物** | 个人近况、经历 | 上刊头、中画面窗、下字幕带，字永远不压画面 |
 | **B 雾金玻璃** | 活动、开业、品牌 | 满幅＋雾＋液态玻璃 |
 | **C 港刊大字** | 热点、观点、金句 | 满幅＋书脊线＋宋体大字字幕 |
 | **K1 证据桌** | 政策、新闻、报告原文 | 桌面纸纹、撕边剪报、荧光笔、红圈 |
@@ -175,10 +176,11 @@ AI 生成的渠道全在 `template/gen_providers.json`（RunningHub 应用／Run
 
 | 什么时候读 | 读哪个 |
 |---|---|
-| 第一次用、或要知道「参考片长什么样」 | `references/01_参考片拆解_33.md`（只留文字拆解，截图含他人正脸不入库） |
+| 第一次用、或要知道「参考片长什么样」 | `references/01_参考片拆解_33.md`（＋ `references/assets/ref33_*.jpg`） |
 | 校对、写 edits.json 与 decompose.json（**每支片子都要**） | `references/02_拆解与判定规则.md` |
 | 挑素材、搜素材、接生成渠道、写生成提示词 | `references/03_B-roll三路来源.md`、`references/08_生成接口备忘.md` |
 | 选风格包、账号主题、封面形式、信息卡；改包装、新做一套、出风格目录 | `references/04_包装设计系统.md` |
+| F 满幅讲述（默认包）的规格、排版细则、复刻与验证流程 | `references/11_F满幅讲述_规格与约束.md` |
 | 选配乐、调电平、加音效 | `references/05_声音.md` |
 | 验收、派评审、写交付清单 | `references/06_验收与评审循环.md` |
 | 脚本报错、渲染失败、对位不准 | `references/07_踩坑记录.md` |

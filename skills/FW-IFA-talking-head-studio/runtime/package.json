@@ -4,9 +4,10 @@
   "description": "IFA口播成片 共享 Remotion 运行时。工程里的 node_modules 软链到这里，版本只在这里钉。",
   "dependencies": {
     "@remotion/cli": "4.0.484",
-    "remotion": "4.0.484",
+    "playwright-core": "1.60.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
+    "remotion": "4.0.484",
     "typescript": "5.9.3"
   }
 }

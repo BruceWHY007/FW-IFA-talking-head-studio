@@ -21,7 +21,15 @@ export type InfoStyle = {
   WindowBg?: React.FC;        // 非 blur 模式时铺满画面窗的底（桌面、网格、渐变）
   Circle?: React.FC<{x: number; y: number; w: number; h: number; p: number}>;  // K1 手画红圈
   sourcePrefix?: string;
+  unitInline?: boolean;       // 单位（%、年）跟在数字后面同基线，不另起一行；区间破折号画成居中的细横线（10-29 验片：「%」掉到数字下面）
 };
+
+// 数值：区间的短横画成垂直居中的细线（Didot 的 – 又长又贴底），其余字符原样
+const NumText: React.FC<{v: string}> = ({v}) => (
+  <>{String(v).split(/([–—-])/).map((c, i) => /^[–—-]$/.test(c)
+    ? <span key={i} style={{display: 'inline-block', width: '0.36em', height: '0.045em', minHeight: 4, background: 'currentColor', margin: '0 0.14em', verticalAlign: '0.3em'}} />
+    : <span key={i}>{c}</span>)}</>
+);
 
 const appear = (f: number, at: number, d = 6) => wipe(f - at, 0, d);   // 遮罩揭开的剩余百分比（100→0）
 
@@ -113,14 +121,20 @@ export const InfoCore: React.FC<{f: number; s: Shot; st: InfoStyle; face: {cx: n
       const at = it.revealAt ?? t0 + i * 10;
       const win = info.win === i || it.win;
       const x = A.x + i * (cw + st.gap), y = A.y + titleH;
-      const nsz = fitSize(String(it.value), cw - st.pad * 2, 170, 80);
+      const inline = !!st.unitInline && !!it.unit && String(it.unit).length <= 2;
+      const usz0 = (n: number) => Math.max(40, Math.round(n * 0.3));
+      const nsz = fitSize(String(it.value), cw - st.pad * 2 - (inline ? usz0(150) * String(it.unit).length + 16 : 0), 170, 80);
       kids.push(
         <div key={'c' + i} style={{position: 'absolute', left: x, top: y + (S ? i * 18 : 0), width: cw, height: ch, clipPath: cardIn(at - 4)}}>
           {S ? <S x={0} y={0} w={cw} h={ch} seed={i + 3} on={win} /> : null}
           <div style={{position: 'absolute', left: st.pad, top: st.pad, fontFamily: body, fontWeight: 600, fontSize: 30, letterSpacing: '0.18em', color: win ? st.accent : st.mute}}>{it.label}</div>
-          <div style={{position: 'absolute', left: st.pad - 4, top: st.pad + 58, fontFamily: st.numFont, fontWeight: st.numWeight, fontSize: nsz, lineHeight: 1, whiteSpace: 'nowrap',
-            letterSpacing: '-0.02em', color: win ? st.accent : st.ink, clipPath: `inset(-10% ${appear(f, at, 5)}% -10% 0)`}}>{it.value}</div>
-          {it.unit ? <div style={{position: 'absolute', left: st.pad, top: st.pad + 70 + nsz, fontFamily: body, fontWeight: 600, fontSize: 32, color: st.ink,
+          <div style={{position: 'absolute', left: st.pad - 4, top: st.pad + 58, display: 'flex', alignItems: 'baseline', gap: 14, whiteSpace: 'nowrap',
+            clipPath: `inset(-10% ${appear(f, at, 5)}% -10% 0)`}}>
+            <span style={{fontFamily: st.numFont, fontWeight: st.numWeight, fontSize: nsz, lineHeight: 1, letterSpacing: '-0.02em', color: win ? st.accent : st.ink}}>
+              <NumText v={String(it.value)} /></span>
+            {inline ? <span style={{fontFamily: body, fontWeight: 700, fontSize: usz0(nsz), lineHeight: 1, color: win ? st.accent : st.ink}}>{it.unit}</span> : null}
+          </div>
+          {it.unit && !inline ? <div style={{position: 'absolute', left: st.pad, top: st.pad + 70 + nsz, fontFamily: body, fontWeight: 600, fontSize: 32, color: st.ink,
             clipPath: `inset(0 ${appear(f, at + 2, 5)}% 0 0)`}}>{it.unit}</div> : null}
           {it.note ? <div style={{position: 'absolute', left: st.pad, bottom: st.pad, width: cw - st.pad * 2, fontFamily: body, fontWeight: 400, fontSize: 26, lineHeight: 1.4,
             color: st.mute, clipPath: `inset(0 ${appear(f, at + 4, 6)}% 0 0)`}}>{it.note}</div> : null}

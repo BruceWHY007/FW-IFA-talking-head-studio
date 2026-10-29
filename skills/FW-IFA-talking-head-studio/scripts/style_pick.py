@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """风格确认：用这条片子自己的素材，在六套风格包里各渲 4 帧，拼成一张选择单，让人挑。
 
-    python3 style_pick.py <工程目录> [--packs A,B,C,K1,K2,K3] [--theme 维港青]
+    python3 style_pick.py <工程目录> [--packs F,A,B,C,K1,K2,K3] [--theme 维港青]
 
 为什么要用「自己的素材」而不是示范内容：`gallery.py` 用的是选题库的示范文案，人看到的是别人的话；
 风格要贴着这条片子的脸、字、数字来选，所以这里直接拿本工程已 build 的时间线，只换风格包渲同一批帧。
@@ -18,7 +18,7 @@ from kb import P, SKILL, load, save, die
 
 ap = argparse.ArgumentParser()
 ap.add_argument("proj")
-ap.add_argument("--packs", default="A,B,C,K1,K2,K3")
+ap.add_argument("--packs", default="F,A,B,C,K1,K2,K3")
 ap.add_argument("--theme", default="", help="给能换色的包套一个账号主题看效果（已经写在时间线里的主题会被覆盖）")
 ap.add_argument("--reuse", action="store_true", help="已经渲过的风格帧直接复用，不重新渲染（只重拼选择单）")
 a = ap.parse_args()
@@ -28,9 +28,10 @@ TL_P = P(R, "src", "timeline.json")
 if not os.path.exists(TL_P) or not os.path.exists(P(proj, "timing.json")):
     die("先对这个工程跑一次 build.py（要借它已经归一化好的素材与时间线）")
 base = load(TL_P)
-ALIAS = {"A": "editorial", "B": "glass", "C": "kinetic", "K1": "evidence", "K2": "diagram", "K3": "brand"}
-NAMES = {"A": "A 分带刊物", "B": "B 雾金玻璃", "C": "C 港刊大字", "K1": "K1 证据桌", "K2": "K2 图解", "K3": "K3 IFA 品牌刊"}
+ALIAS = {"F": "fullbleed", "A": "editorial", "B": "glass", "C": "kinetic", "K1": "evidence", "K2": "diagram", "K3": "brand"}
+NAMES = {"F": "F 满幅讲述（默认）", "A": "A 分带刊物", "B": "B 雾金玻璃", "C": "C 港刊大字", "K1": "K1 证据桌", "K2": "K2 图解", "K3": "K3 IFA 品牌刊"}
 ONE = {
+    "F": "满幅讲述：她满幅在说，画面处理轮换（小窗／分带／B-roll），数据才上玻璃卡，金银字落重话",
     "A": "上刊头、中画面窗、下字幕带，字永远不压画面",
     "B": "满幅实拍＋雾＋液态玻璃，字压在雾上",
     "C": "满幅＋书脊线＋宋体大字，字就是版面",
@@ -39,6 +40,7 @@ ONE = {
     "K3": "和 IFA 小红书图文卡同一套渐变与 logo",
 }
 GOOD = {
+    "F": "观点讲述、政策解读、财经科普——默认选它",
     "A": "个人近况、生活、经历",
     "B": "活动、开业、品牌宣传",
     "C": "热点、观点、金句",
@@ -47,6 +49,7 @@ GOOD = {
     "K3": "平台、招募、团队",
 }
 COST = {
+    "F": "满幅会露出原片背景杂物；卡片与大字卡合计不超过 25%，信息多的片子要拆成两支",
     "A": "画面窗只占 58% 高，脸会比满幅小",
     "B": "满幅会露出原片底部的桌面杂物；雾会压掉一点脸部细节",
     "C": "满幅＋大字，信息靠字幕，数字多时不好承载",

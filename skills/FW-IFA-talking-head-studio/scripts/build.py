@@ -34,9 +34,10 @@ lib = load(P(proj, "broll", "library.json"), {"clips": {}})
 R = P(proj, "remotion")
 PUB = P(R, "public")
 # 风格包：A editorial 分带刊物／B glass 雾金玻璃／C kinetic 港刊大字／K1 evidence 证据桌／K2 diagram 图解／K3 brand IFA 品牌刊
-ALIAS = {"A": "editorial", "B": "glass", "C": "kinetic", "K1": "evidence", "K2": "diagram", "K3": "brand",
+ALIAS = {"A": "editorial", "B": "glass", "C": "kinetic", "K1": "evidence", "K2": "diagram", "K3": "brand", "F": "fullbleed",
+         "满幅讲述": "fullbleed", "全屏口播": "fullbleed",
          "分带刊物": "editorial", "雾金玻璃": "glass", "港刊大字": "kinetic", "证据桌": "evidence", "图解": "diagram", "IFA品牌刊": "brand", "品牌刊": "brand"}
-STYLE = ALIAS.get(str(dec.get("style", "editorial")).replace(" ", ""), dec.get("style", "editorial"))
+STYLE = ALIAS.get(str(dec.get("style", "fullbleed")).replace(" ", ""), dec.get("style", "fullbleed"))
 LAYOUT = load(P(R, "src", "packs", "layout.json"))
 if STYLE not in LAYOUT:
     die("没有这个风格包：%s（可选 %s）" % (STYLE, "、".join(k for k in LAYOUT if not k.startswith("_"))))
@@ -143,7 +144,7 @@ for sh in dec.get("shots", []):
 shots.sort(key=lambda x: x["t0"])
 
 # 规则：B 镜头 ≥1.6s；相邻非 A 镜头之间 <0.6s 的 A 缝合掉（防止一闪而过的脸）
-MIN_B, MAX_B = 1.6, 6.5
+MIN_B, MAX_B = 1.6, (9.0 if STYLE == "fullbleed" else 6.5)   # F 包：R0 单条 B 最长 9s（数据地球那段），见 references/11 §五
 ONSETS = sorted(set(c["s"] for c in chars if c["c"] not in PUNCT))
 for k, s in enumerate(shots):
     mn = 1.2 if s["type"] == "G" else 2.4 if s["type"] == "I" else MIN_B  # 大字卡最短 1.2s（引子越短越好）；信息卡 2.4s
@@ -244,7 +245,7 @@ for f0, f1 in covered:
 if cur < NF:
     a_segs.append((cur, NF))
 a_total = sum(b - a for a, b in a_segs) / FPS
-for a0, a1 in a_segs:
+for a0, a1 in (a_segs if STYLE != "fullbleed" else []):   # F 包的人脸段按「版面事件间隔」查，在后面
     # 景别变化不算「换了画面」（10-22 评审：一次推镜撑不住 12.5 秒的人脸）；连续人脸 >8.5s 就要插一条
     if (a1 - a0) / FPS > 8.5:
         warn.append("人脸镜头 %s–%s 连续 %.1fs（>8.5s）：中间找一句事实、名词或动作盖 B-roll"
@@ -296,6 +297,57 @@ def src_path(pick):
         return ref if os.path.isabs(ref) else P(proj, ref)
     return None
 
+def conform_extra(pick, t_in, need_s, W, H, name, fx=0.5, fy=0.5, extra=""):
+    """F 包的插条、分带第二三条：裁成 W×H、统一调色、24/25fps 逐帧铺进 30fps；不够长慢放到 0.85，再不够就报。返回 public 下的相对路径"""
+    sp = src_path(pick) if ":" in str(pick)[:7] else (pick if os.path.isabs(pick) else P(proj, pick))
+    if not sp or not os.path.exists(sp):
+        warn.append("%s 的素材不存在：%s → 这一块先空着" % (name, pick))
+        return None
+    ext = os.path.splitext(sp)[1].lower()
+    if ext in (".jpg", ".jpeg", ".png", ".webp"):
+        dst = P(PUB, "img", name + ext)
+        shutil.copy(sp, dst)
+        w_, h_ = probe_img(sp)
+        if w_ and W / min(w_, h_ * W / H) > 1.6:
+            warn.append("%s 图片 %dx%d 放进 %dx%d 要放大 %.1f 倍，会糊：换大图" % (name, w_, h_, W, H, W / min(w_, h_ * W / H)))
+        return "img/%s%s" % (name, ext)
+    info = probe(sp)
+    v = info["video"]
+    sfps = v["fps"]
+    fm = 23.5 < sfps < 25.5
+    speed = 30.0 / sfps if fm else 1.0
+    need_src = need_s * speed
+    avail = info["duration"] - t_in
+    if avail < need_src:
+        if fm and avail >= need_s + 0.04:
+            fm, speed, need_src = False, 1.0, need_s
+        else:
+            fm = False
+            speed = max(avail / need_s, 0.85)
+            need_src = need_s * speed
+            if avail / need_s < 0.85:
+                warn.append("%s 素材从 %.1fs 起只剩 %.1fs，不够 %.1fs：换素材或改入点" % (name, t_in, avail, need_s))
+    look = GRADE + ("," + extra if extra else "")
+    ar = "%d/%d" % (W, H)
+    cw, chh = "min(iw\\,ih*%s)" % ar, "min(ih\\,iw/(%s))" % ar
+    pts = "settb=1/30,setpts=N" if fm else "setpts=(PTS-STARTPTS)/%.4f" % speed
+    fc = "[0:v]%s,fps=30,crop=%s:%s:(iw-%s)*%.3f:(ih-%s)*%.3f,scale=%d:%d,%s,format=yuv420p" % (pts, cw, chh, cw, fx, chh, fy, W, H, look)
+    out = P(PUB, "clips", name + ".mp4")
+    sig = json.dumps([sp, t_in, W, H, fx, fy, round(speed, 4), round(need_s, 3), look, fm])
+    sig_p = out[:-4] + ".sig"
+    if not os.path.exists(out) or not os.path.exists(sig_p) or open(sig_p).read() != sig or not a.no_conform:
+        run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % t_in, "-i", sp, "-t", "%.3f" % (need_src + 0.1), "-filter_complex", fc]
+            + encoder_args("high") + ["-an", "-r", "30", "-t", "%.3f" % need_s, out])
+        open(sig_p, "w").write(sig)
+    up = W / min(v["w"], v["h"] * W / H)
+    if up > 1.6:
+        warn.append("%s 素材 %dx%d 裁进 %dx%d 要放大 %.1f 倍会糊：换更高清的，或改用 band 画框条" % (name, v["w"], v["h"], W, H, up))
+    return "clips/%s.mp4" % name
+
+# F 包：每种画面处理里主素材实际占的框（主素材按这个尺寸裁，不按整窗裁——分带只有 650 高）
+F_MAIN = {"bands3": (1080, 650), "glowband": (1080, 1150)}
+F_LAYOUTS = ("full", "band", "bands3", "pip", "glow", "glowband", "ring", "doc")
+
 # 信息卡输出：锚点→帧号；quote 的重点词→字符区间；按卡型查字数（装不下就报，不缩字号、不截断）
 LIMITS = {"quote": [("text", 44)], "compare": [("title", 16)], "list": [("title", 16)], "timeline": [("title", 16)], "chart": [("title", 18)]}
 ITEM_LIM = {"compare": {"label": 6, "value": 7, "unit": 6, "note": 16}, "list": {"t": 9, "d": 16}, "timeline": {"when": 8, "what": 12},
@@ -315,6 +367,8 @@ def info_out(s):
             warn.append("信息卡 %s 的 %s 有 %d 字（上限 %d）：拆成两张卡或删字" % (s["id"], key, len(str(info.get(key, ""))), lim))
     for it in info.get("items") or info.get("groups") or []:
         for key, lim in ITEM_LIM.get(kind, {}).items():
+            if info.get("surface") == "paper" and key == "t":
+                lim = 13   # 皱纸单一行一条、居中排，13 字以内装得下
             if isinstance(it, dict) and len(str(it.get(key, ""))) > lim:
                 warn.append("信息卡 %s 的条目「%s」%s 超过 %d 字" % (s["id"], str(it.get(key))[:8], key, lim))
     if kind == "quote" and info.get("hl"):
@@ -346,6 +400,18 @@ for k, s in enumerate(shots):
     for key in ("tag", "need", "credit", "figure"):
         if s.get(key):
             o[key] = dict(s[key]) if isinstance(s[key], dict) else s[key]
+    # F 包的画面处理：layout（见 references/11 §四）＋方窗位置＋原文截图的高亮框
+    if s.get("layout"):
+        if s["layout"] not in F_LAYOUTS:
+            die("%s 的 layout 只能是 %s，写的是 %s" % (s["id"], "／".join(F_LAYOUTS), s["layout"]))
+        o["layout"] = s["layout"]
+    for key in ("pip_pos", "hl"):
+        if s.get(key) is not None:
+            o[key] = s[key]
+    if s.get("hl_at"):
+        r_ = find(s["hl_at"], s["i0"])
+        if r_:
+            o["hlAt"] = int(round(chars[r_[0]]["s"] * FPS))
     if s.get("figure") and s["figure"].get("at"):
         # 大字在说到这个词的那一帧揭开（钉在拍上），之前是预备动作
         r_ = find(s["figure"]["at"], s["i0"])
@@ -370,7 +436,8 @@ for k, s in enumerate(shots):
             o["img"] = "img/%s%s" % (s["id"], ext)
             o["move"] = s.get("move", "push")
             w_img, h_img = probe_img(src_img)
-            if min(w_img, h_img) < 1080:
+            o["iw"], o["ih"] = w_img, h_img
+            if min(w_img, h_img) < 1080 and s.get("layout") != "doc":
                 warn.append("%s 图片只有 %dx%d，推到 1080 宽会糊：换大图，或把运镜改成 hold" % (s["id"], w_img, h_img))
     elif s["type"] in ("B", "S") or (s["type"] == "G" and s.get("pick")):
         sp = src_path(s["pick"]) if s.get("pick") else None
@@ -407,12 +474,24 @@ for k, s in enumerate(shots):
                 if avail / need_s < 0.85:
                     warn.append("%s 素材从 %.1fs 起只剩 %.1fs，不够 %.1fs（慢放下限 0.85）：换素材或缩短镜头" % (s["id"], t_in, avail, need_s))
             fit = s.get("fit") or ("cover" if v["h"] >= v["w"] or s["type"] == "G" else "cover")
+            TW, TH = WW, WH
+            if STYLE == "fullbleed" and s["type"] in ("B", "S"):
+                lay_ = s.get("layout")
+                # 横版素材裁满幅要放大 >1.45 倍：没指定 layout 就自动走 band 画框条（R0 钟表镜、R1 新闻镜的做法），不硬裁
+                if not lay_ and v["w"] > v["h"] and WW / min(v["w"], v["h"] * WW / WH) > 1.45:
+                    lay_ = "band"
+                    o["layout"] = "band"
+                if lay_ == "band":
+                    fit = "band"
+                if lay_ in F_MAIN:
+                    TW, TH = F_MAIN[lay_]
             # 单镜补光：在统一调色后面追加（例 "eq=gamma=1.15"），只给偏暗的素材用，整片色调仍是一套
             look = GRADE + ("," + s["grade_extra"] if s.get("grade_extra") else "")
             fx = float(s.get("focus", 0.5))
             fy = float(s.get("focus_y", 0.5))  # 竖向取景：0 顶、1 底（例：浪花在画面下部）
             out = P(PUB, "clips", s["id"] + ".mp4")
-            sig = json.dumps([sp, t_in, fit, fx, round(speed, 4), round(need_s, 3), look, frame_map, WW, WH, fy])
+            BAND_Y = int(s.get("band_y", LAYOUT[STYLE].get("bandY", 560)))
+            sig = json.dumps([sp, t_in, fit, fx, round(speed, 4), round(need_s, 3), look, frame_map, TW, TH, fy, BAND_Y])
             sig_p = out[:-4] + ".sig"
             stale = not os.path.exists(out) or not os.path.exists(sig_p) or open(sig_p).read() != sig
             if stale or not a.no_conform:
@@ -423,28 +502,37 @@ for k, s in enumerate(shots):
                     # 逐帧铺不够长：用运动补帧到 30fps（不再退回「每 5 帧重复 1 帧」，10-22 评审第 2 轮）
                     pts += ",minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"
                 if fit == "band":
-                    band_y = 560
+                    band_y = BAND_Y
                     fc = ("[0:v]%s,fps=30,split[a][b];"
                           "[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=40:2,eq=brightness=-0.16:saturation=0.7[bg];"
                           "[b]scale=1080:-2,%s[fg];[bg][fg]overlay=0:%d,%s" % (pts, look, band_y, "format=yuv420p"))
                     o["band"] = {"y": band_y, "h": int(round(1080 * v["h"] / v["w"]))}
                 else:
                     # 裁成画面窗的比例（分带刊物的窗接近方形，横版素材只需轻裁）
-                    ar = "%d/%d" % (WW, WH)
+                    ar = "%d/%d" % (TW, TH)
                     cw, chh = "min(iw\\,ih*%s)" % ar, "min(ih\\,iw/(%s))" % ar
                     fc = ("[0:v]%s,fps=30,crop=%s:%s:(iw-%s)*%.3f:(ih-%s)*%.3f,scale=%d:%d,%s,format=yuv420p"
-                          % (pts, cw, chh, cw, fx, chh, fy, WW, WH, look))
+                          % (pts, cw, chh, cw, fx, chh, fy, TW, TH, look))
                 run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % t_in, "-i", sp, "-t", "%.3f" % (need_s * speed + 0.1),
                      "-filter_complex", fc] + encoder_args("high") + ["-an", "-r", "30", "-t", "%.3f" % need_s, out])
                 open(sig_p, "w").write(sig)
             o["clip"] = "clips/%s.mp4" % s["id"]
             o["fit"] = fit
             if fit == "band":
-                o["band"] = {"y": 560, "h": int(round(1080 * v["h"] / v["w"]))}
+                o["band"] = {"y": BAND_Y, "h": int(round(1080 * v["h"] / v["w"]))}
+            # F 包分带／光晕圆＋下条：第二、三条素材（picks 里写，入点 ins）
+            if s.get("picks"):
+                lay_ = o.get("layout")
+                sizes = {"bands3": [(1080, 640), (1080, 630)], "glowband": [(1080, 770)]}.get(lay_, [])
+                if not sizes:
+                    warn.append("%s 写了 picks，但 layout=%s 用不到第二条素材（只有 bands3／glowband 用）" % (s["id"], lay_))
+                ins_ = s.get("ins") or []
+                o["clips"] = [c for c in (conform_extra(pk, float(ins_[j]) if j < len(ins_) else 0.0, need_s, sizes[j][0], sizes[j][1], "%s_%d" % (s["id"], j + 2))
+                              for j, pk in enumerate(s["picks"][:len(sizes)])) if c]
             if s["type"] == "G":
                 o["bg"] = o.pop("clip")
             short = min(v["w"], v["h"])
-            up = WW / min(v["w"], v["h"] * WW / WH)
+            up = TW / min(v["w"], v["h"] * TW / TH)
             if fit == "cover" and up > 1.45 and s["type"] != "G":  # 大字卡的底压暗当背景，糊一点不碍事
                 warn.append("%s 素材 %dx%d 裁进 %dx%d 画面窗要放大 %.1f 倍会糊：换更高清或竖版素材、或换风格包 A（窗接近方形）"
                             % (s["id"], v["w"], v["h"], WW, WH, up))
@@ -536,17 +624,25 @@ KEEP2 = set("过去 这几 那几 个月 没有 一下 这个 那个 什么 已�
             "决定 学校 读书 入学 适应 放心 出镜 下一 主要 怎么 稀缺 成果 不错 半年 几个 月份 办公 背后 大厦 中环 复星 交代 两个 整个 "
             "后面 多多 一些 点赞 招呼 公司 客户 资产 配置 美国 中国 日本 全球 经济 危机 利息 利率 市场 收入 利润 时候 因为 所以 但是 "
             "如果 我们 你们 他们 她们 这些 那些 还是 只是 就是 不是 所有 今天 明天 去年 今年 明年 一个 一起 一直 一定 可能 应该 需要 "
-            "知道 觉得 认为 希望 喜欢 工作 生活 身份 申请 移民 保险 基金 股票 理财 投资 收益 风险 合规 服务 专业 机会 问题 方法".split())
+            "知道 觉得 认为 希望 喜欢 工作 生活 身份 申请 移民 保险 基金 股票 理财 投资 收益 风险 合规 服务 专业 机会 问题 方法 "
+            "控制 境外 境内 主体 备案 核准 管理 办法 保单 信托 融资 链条 申报 豁免 通道 罚款 个人 二级 结构 架构 监管 政策 外汇 银行 "
+            "通过 条文 路径 资金 出境 返程 实施 系统 报告 合同 债权 持股 持有 代持 杠杆 成本 程序 义务 细则 目录 存量 配套 审批 全过程".split())
+KEEPN = ("对外投资 管理办法 外汇购付汇 购付汇 跨境理财通 家族信托 保单持有人 保险合同 工作日 整数倍 二级市场 发改委 居住地 申报路径 "
+         "两套 一套 线上 架子 返程投资 境外主体 实质控制 持牌 合规律师 联合惩戒 违法所得 投资额 管辖范围 金融服务 程序义务 全过程").split()
 phr = []
 for s in tc["sentences"]:
     cs = [c for c in chars if c["sid"] == s["id"]]
     buf = []
     def emit():
-        cs_ = [c for c in buf if c["c"] not in "，。、；：,.;:"]
+        cs_ = [c for k_, c in enumerate(buf) if c["c"] not in "，。、；：,;" and not (c["c"] in ".:" and not (0 < k_ < len(buf) - 1 and buf[k_ - 1]["c"].isdigit() and buf[k_ + 1]["c"].isdigit()))]
         t = "".join(c["c"] for c in cs_)
         if t.strip():
             phr.append({"sid": s["id"], "text": t, "s": buf[0]["s"], "e": buf[-1]["e"], "cs": cs_})
-    for c in cs:
+    for ci, c in enumerate(cs):
+        # 数字中间的点和冒号不是断句（1-1.5%、9:30）：10-27／10-29 两次实测「再按中方投资额1-1」「5%罚款」被拆成两张卡
+        if c["c"] in ".:" and 0 < ci < len(cs) - 1 and cs[ci - 1]["c"].isdigit() and cs[ci + 1]["c"].isdigit():
+            buf.append(c)
+            continue
         if c["c"] in "，。、；：,.;:！？!?":
             if c["c"] in "！？!?":
                 buf.append(c)
@@ -577,7 +673,11 @@ def split_long(p):
         soft = 1.0 if (t[i - 1] in AFTER or t[i] in BEFORE) else 0.0
         bal = abs(wlen(t[:i]) - wlen(t[i:])) / max(wlen(t), 1)
         word = t[i - 1:i + 1] in KEEP2
-        return gap * 8 + soft - bal * 3 - (6 if same_word else 0) - (4 if word else 0)
+        # 多字术语不拆（对外｜投资、购付｜汇）；引号书名号不和它的字分家（「控制｜」）；不断在「的」前面（被盯上｜的是）——10-29 自查
+        term = any(t.find(w_) >= 0 and t.find(w_) < i < t.find(w_) + len(w_) for w_ in KEEPN)
+        quote = t[i] in "」”）》、" or t[i - 1] in "「“（《"
+        return gap * 8 + soft - bal * 3 - (6 if same_word else 0) - (4 if word else 0) - (5 if term else 0) - (8 if quote else 0) \
+            - (2 if t[i] == "的" else 0)
     cut = max(range(2, n - 1), key=score)
     tm = cs_[cut]["s"]  # 拆点用真实字头时间，不插值
     return split_long({"sid": p["sid"], "text": t[:cut], "s": p["s"], "e": cs_[cut - 1]["e"], "cs": cs_[:cut]}) + \
@@ -599,7 +699,7 @@ cards, i = [], 0
 while i < len(phr):
     p = phr[i]
     lines = [p]
-    if i + 1 < len(phr) and phr[i + 1]["sid"] == p["sid"] and wlen(p["text"]) + wlen(phr[i + 1]["text"]) <= MAXC * 2 \
+    if LAYOUT[STYLE].get("capLines", 2) > 1 and i + 1 < len(phr) and phr[i + 1]["sid"] == p["sid"] and wlen(p["text"]) + wlen(phr[i + 1]["text"]) <= MAXC * 2 \
             and phr[i + 1]["s"] - p["e"] < 0.5:
         lines.append(phr[i + 1])
         i += 1
@@ -699,6 +799,111 @@ for c in cap_out:
         if cc["lines"]:
             final_caps.append(cc)
             prev_to = cc["to"]
+# F 包：整行重话换金／银（captions.gold／captions.silver 写原话片段，字幕行包含它就整行换色放大）；第一张卡是开场钩子（放大一档）
+_TONE = [(t, "gold") for t in dec.get("captions", {}).get("gold", [])] + [(t, "silver") for t in dec.get("captions", {}).get("silver", [])]
+def _norm(t):
+    return "".join(ch for ch in t if ch not in PUNCT)
+if _TONE:
+    _hit = set()
+    for c in final_caps:
+        for l in c["lines"]:
+            for t_, tone_ in _TONE:
+                if _norm(t_) and _norm(t_) in _norm(l["text"]):
+                    l["tone"] = tone_
+                    l["hl"], l["hlAt"] = [], []
+                    _hit.add(t_)
+    for t_, _ in _TONE:
+        if t_ not in _hit:
+            warn.append("captions 金／银重话「%s」在字幕里找不到（字幕按气口断行，重话要写成一行里连着的原话）" % t_)
+if final_caps and dec.get("captions", {}).get("hook", True):
+    final_caps[0]["hook"] = True
+
+# F 包：插条（盖在她画面上的上／下条、角落小图）、屏上字（堆叠清单／步骤标题／散点关键词）、常驻进度坞
+def _fr(anchor, after=0, end=False):
+    r_ = find(anchor, after)
+    if not r_:
+        die("锚点找不到：「%s」" % anchor)
+    return int(round((chars[r_[1]]["e"] if end else chars[r_[0]]["s"]) * FPS)), r_
+def _until(item, f0, i_after, default_s):
+    if item.get("until"):
+        f1, _ = _fr(item["until"], i_after)
+        return f1
+    return min(NF, f0 + int(default_s * FPS))
+inserts = []
+INS_SIZE = {"top": (1080, 520), "bottom": (1080, 650), "corner": (360, 240)}
+for n_, ins in enumerate(dec.get("inserts", [])):
+    pos = ins.get("pos", "bottom")
+    if pos not in INS_SIZE:
+        die("inserts 的 pos 只能是 top／bottom／corner：%s" % pos)
+    r_ = find(ins["cover"], 0)
+    if not r_:
+        die("inserts 锚点找不到：" + ins["cover"])
+    f0 = int(round(chars[r_[0]]["s"] * FPS))
+    nx = next((j for j in range(r_[1] + 1, len(chars)) if chars[j]["c"] not in PUNCT), None)
+    f1 = int(round((chars[nx]["s"] if nx is not None else chars[r_[1]]["e"] + 0.3) * FPS))
+    if any(x["from"] < f1 and x["to"] > f0 for x in out_shots):
+        warn.append("插条「%s」和镜头重叠：插条只放在人脸段上（盖住 B-roll 就看不见了）" % ins["cover"][:12])
+    W_, H_ = INS_SIZE[pos]
+    rel = conform_extra(ins.get("pick") or ins.get("image"), float(ins.get("in", 0)), (f1 - f0) / FPS + 0.15, W_, H_, "ins%02d" % (n_ + 1),
+                        float(ins.get("focus", 0.5)), float(ins.get("focus_y", 0.5)), ins.get("grade_extra", ""))
+    item = {"from": f0, "to": f1, "pos": pos, "move": ins.get("move")}
+    if rel:
+        item["img" if rel.startswith("img/") else "clip"] = rel
+    inserts.append(item)
+texts_out = []
+for tx in dec.get("texts", []):
+    kind = tx.get("kind", "stack")
+    if kind not in ("stack", "step", "scatter"):
+        die("texts 的 kind 只能是 stack／step／scatter：%s" % kind)
+    lines_ = []
+    cur_ = 0
+    for ln in tx.get("lines", []):
+        f_, r_ = _fr(ln["at"], cur_)
+        cur_ = r_[0]
+        lines_.append({"t": ln["t"], "from": f_ - 2, "tone": ln.get("tone"), "xy": ln.get("xy"), "size": ln.get("size")})
+    if not lines_:
+        continue
+    f0 = lines_[0]["from"]
+    f1 = _until(tx, f0, cur_, {"step": 4.5, "stack": 3.0, "scatter": 2.6}[kind] + (lines_[-1]["from"] - f0) / FPS)
+    if kind == "stack" and len(lines_) > 3:
+        warn.append("堆叠清单「%s」有 %d 行：屏上最多同时 3 行（第 4 行起顶掉最早一行），超过 4 行改信息卡" % (lines_[0]["t"], len(lines_)))
+    texts_out.append({"kind": kind, "from": f0, "to": f1, "lines": lines_, "align": tx.get("align"), "tone": tx.get("tone"), "top": tx.get("top"), "size": tx.get("size"), "num": bool(tx.get("num"))})
+tracker = None
+if dec.get("tracker"):
+    T = dec["tracker"]
+    f0, r0_ = _fr(T["from"])
+    items_ = []
+    cur_ = r0_[0]
+    for it in T.get("items", []):
+        f_, r_ = _fr(it["at"], cur_)
+        cur_ = r_[0]
+        items_.append({"t": it["t"], "from": f_, "n": it.get("n")})
+    tracker = {"title": T.get("title", ""), "en": T.get("en", ""), "from": f0, "to": _until(T, f0, cur_, 600), "items": items_}
+    if len(items_) > 5:
+        warn.append("进度坞有 %d 格：最多 5 格，再多一格就读不清" % len(items_))
+
+# F 包节奏（references/11 §五，R0 实测）：满幅人脸可以长，但连续 12 秒里必须有一次「版面事件」——
+# 插条、堆叠清单、步骤标题、散点关键词、金／银整行、进度坞点亮；景别跳切不算（R0 的人脸段靠字的变化撑住，不靠剪碎）
+if STYLE == "fullbleed":
+    ev = sorted(set([x["from"] for x in inserts] + [x["from"] for x in texts_out] + [l["from"] for x in texts_out for l in x["lines"]]
+                    + ([it["from"] for it in tracker["items"]] if tracker else [])
+                    + [c["from"] for c in final_caps if any(l.get("tone") for l in c["lines"])]))
+    for a0, a1 in a_segs:
+        pts = [a0] + [e for e in ev if a0 < e < a1] + [a1]
+        gap = max((b_ - a_) for a_, b_ in zip(pts, pts[1:]))
+        if gap / FPS > 12:
+            warn.append("满幅人脸 %s–%s 有 %.1fs 没有任何版面事件（>12s）：加一处插条／堆叠／金银整行，或盖一条 B-roll" % (hms(a0 / FPS), hms(a1 / FPS), gap / FPS))
+    a_share = a_total / DUR
+    if not 0.45 <= a_share <= 0.75:
+        warn.append("满幅人脸占 %.0f%%（F 包区间 45–75%%，R0 实测 61%%＋插条 7%%）：%s" % (a_share * 100, "B／卡片太多，人被挤掉了" if a_share < 0.45 else "画面处理太少，会读作一条没剪的口播"))
+    lays = [x.get("layout", "full") for x in out_shots if x["type"] in ("B", "S")]
+    for k_ in range(len(lays) - 2):
+        if lays[k_] == lays[k_ + 1] == lays[k_ + 2] and lays[k_] != "full":
+            warn.append("连续三条 B-roll 都用 %s：同一种小窗连用三次会读成模板，换一种处理（R0 相邻两次就换）" % lays[k_])
+    cards_ = [x for x in out_shots if x["type"] in ("I", "G")]
+    if cards_ and sum(x["to"] - x["from"] for x in cards_) / FPS / DUR > 0.25:
+        warn.append("信息卡＋大字卡占 %.0f%%（F 包上限 25%%）：F 是「人在讲」的片子，卡多了就成了 K2 图解" % (sum(x["to"] - x["from"] for x in cards_) / FPS / DUR * 100))
+
 # 标注签：挂在任何镜头上（人脸镜头在刊头下方，满幅 B-roll 在顶部）。来源＝decompose.tags ＋ 各镜头的 tag 字段
 tags = []
 for tg in dec.get("tags", []):
@@ -769,9 +974,10 @@ if OUT > 0:
 shutil.copy(P(proj, "work", "aroll_cut.mp4"), P(PUB, "aroll_cut.mp4"))
 tl = {"fps": FPS, "width": 1080, "height": 1920, "durationInFrames": NF + (OUT if outro else 0), "style": STYLE, "outro": outro, "coverInWindow": bool(LAYOUT[STYLE].get("coverInWindow")),
       "theme": THEME, "account": ACCOUNT,
-      "aroll": {"src": "aroll_cut.mp4", "face": {"cx": face["cx"], "cy": face["cy"]}, "frame": dec.get("frame", {})},
+      "aroll": {"src": "aroll_cut.mp4", "face": {"cx": face["cx"], "cy": face["cy"], "w": face.get("w", 0.3)}, "frame": dec.get("frame", {})},
       "shots": out_shots, "arollZoom": zoom, "captions": final_caps,
-      "masthead": {"series": ttl.get("series", ""), "episode": ttl.get("episode", "")} if ttl else None,
+      "masthead": {"series": ttl.get("series", ""), "episode": ttl.get("episode", ""), "lines": ttl.get("lines", [])} if ttl else None,
+      "inserts": inserts, "texts": texts_out, "tracker": tracker, "disclaimer": dec.get("disclaimer", ""),
       "nametag": nametag, "cover": tl_cover, "end": end, "tags": tags, "sfx": sfx, "chapters": chapters, "emph": emph,
       # 底部：plate＝给平台白字压深底（默认，160px）；paper＝整页纸、报尾落到最底（交付给不用底部叠字的平台，或要极简时用）
       "footer": dec.get("footer", "paper"),
@@ -790,6 +996,10 @@ if tl_cover:
 if end:
     texts += [end["kicker"], end["line"], end["cta"]]
 texts += [t["text"] for t in tags]
+texts += ttl.get("lines", []) + [dec.get("disclaimer", "") or "本内容仅作为科普，不构成任何投资建议"]
+texts += [l["t"] for x in texts_out for l in x["lines"]]
+if tracker:
+    texts += [tracker["title"], tracker["en"]] + [it["t"] for it in tracker["items"]]
 for s in out_shots:
     texts += [s.get("need", "")] + ([str(v) for v in s["figure"].values()] if s.get("figure") else [])
     if s.get("info"):
