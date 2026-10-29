@@ -7,6 +7,7 @@ description: 把一条真人口播原片（手机或相机拍的对镜头讲话�
 
 > 一条真人对镜头讲话的原片，做成有设计感的竖版成片。装完目录 `~/.agents/skills/FW-IFA-talking-head-studio`。
 
+> **任何 Agent 要从零复现**：先读 `references/13_完整复现手册.md`（数据流、文件契约、逐步命令、导演逻辑、包装设计逻辑、代码要点、验收口径、坑）。
 > **换机器、换 AI 接手、第一次装**：先读根目录的 `移植与环境说明.md`（全部规范、外部工具、其他 skill、系统环境、安装与自检、数据契约、红线），
 > 再跑 `bash scripts/setup.sh` 与 `bash scripts/doctor.sh`。
 
@@ -58,10 +59,11 @@ unattended 模式用 `suggest_style` 第一名（F 有保底分，没有明显�
 
 | 步 | 做什么 | 命令 | 产物 |
 |---|---|---|---|
-| ⓪ 给目录 ◆ | 原片一到先给风格目录（用他自己的脸渲），拿到代号再开工（见 §0） | `catalog.py --video 原片` | 总览.jpg（发给用户）＋终端里的选择单 |
+| ⓪ 给菜单 ◆ | 原片一到先发文字菜单（风格 1–7＋完整版／极简档），预览图在 references/assets/styles/；用户要看自己的脸才渲目录（见 §0） | 人工；可选 `catalog.py --video 原片` | 用户回的代号与档位（不回＝F＋完整版） |
 | ① 建工程 | 原片软链进 source/，复制 Remotion 模板，写 brief 空表 | `new_project.py 原片 工程目录` | brief.md、facts.json、project.json |
 | ② 导入转写 | 归一化（竖版 30fps，HDR 转 SDR）、逐字转写、能量包络与停顿 | `ingest.py 工程 --prompt "专有名词"` | transcript.json、work/sheet_2s.jpg |
 | ③ **校对** | 改 transcript.json 的 text（人名、机构、中英混说、数字），加 `_corrected` | 人工（Claude） | 校对后的句表＋`_校对备注` |
+| ③.5 **数字核对原声** ◆ | 带数字的句子重听原声对比：转写常把「千分之」写成 %、吞掉「点」；对不上的让人听，确认后标 `num_verified`（10-29：屏上 1%–1.5% 实为千分之） | `numcheck.py 工程` | work/numcheck.json（build 报警、qa 算项） |
 | ④ 拆 A-roll | 逐句量人脸朝向、清晰度、手势、语速、口癖、重说 | `analyze.py 工程` | work/aroll_sheet.jpg（逐句一格带标签） |
 | ④.5 **风格复核** ◆ | 有他自己的素材之后，把候选风格用**他的脸**渲出来确认（七套各 4 帧：人脸／B-roll／大字卡／信息卡）；与他 ⓪ 步选的不一致就问他 | `suggest_style.py 工程` → `style_pick.py 工程` → 人 | out/风格目录/选择单.jpg、选择单.md；decompose.json 的 `style` |
 | ⑤ **判定** ◆ | 按已选的风格包写 edits.json（剪什么）与 decompose.json（主题、账号、每一镜是什么、配什么）——规则见 `02`、`04` §〇 | 人工（Claude） | 两份 json，每镜有 `why` |
@@ -185,6 +187,8 @@ AI 生成的渠道全在 `template/gen_providers.json`（RunningHub 应用／Run
 | 挑素材、搜素材、接生成渠道、写生成提示词 | `references/03_B-roll三路来源.md`、`references/08_生成接口备忘.md` |
 | 选风格包、账号主题、封面形式、信息卡；改包装、新做一套、出风格目录 | `references/04_包装设计系统.md` |
 | F 满幅讲述（默认包）的规格、排版细则、复刻与验证流程 | `references/11_F满幅讲述_规格与约束.md` |
+| 极简档（自动规划＋自动取素材＋审片 auto→review→redo） | `references/12_极简档.md` |
+| 从零完整复现（给其他 Agent） | `references/13_完整复现手册.md` |
 | 选配乐、调电平、加音效 | `references/05_声音.md` |
 | 验收、派评审、写交付清单 | `references/06_验收与评审循环.md` |
 | 脚本报错、渲染失败、对位不准 | `references/07_踩坑记录.md` |

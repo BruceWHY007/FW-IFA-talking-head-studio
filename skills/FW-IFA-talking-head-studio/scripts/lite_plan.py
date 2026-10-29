@@ -29,7 +29,7 @@ tc_p = P(proj, "work", "transcript_cut.json")
 tc = load(tc_p) if os.path.exists(tc_p) else load(P(proj, "transcript.json"))
 sents = tc["sentences"]
 
-NUM = re.compile(r"(\d+(?:\.\d+)?(?:[-–]\d+(?:\.\d+)?)?)\s*(%|个工作日|个月|万亿|万|亿|倍|年|天|人|家|位|岁|成)")
+NUM = re.compile(r"(\d+(?:\.\d+)?(?:[-–]\d+(?:\.\d+)?)?)\s*(%|‰|个工作日|个月|万亿|万|亿|倍|年|天|人|家|位|岁|成)")
 ORD = re.compile(r"^(第[一二三四五六七八九十]|[一二三四五六七八九十]是|首先|其次|最后)")
 PUNCT = "，。、！？；：,.!?;: "
 
@@ -159,4 +159,6 @@ json.dump(dec, open(out, "w"), ensure_ascii=False, indent=1)
 print("✓ %s：数字卡 %d 张、步骤标题 %d 处、金银整行 %d 句、关键词 %d 个" % (out, len(shots), len(texts), len(gold) + len(silver), len(hl)))
 for t in tips:
     print("  · tips：" + t)
-print("下一步：python3 stock.py %s auto --decompose %s ；python3 build.py %s --decompose %s ；python3 render.py %s" % (proj, out, proj, out, proj))
+if not os.path.exists(P(proj, "work", "numcheck.json")):
+    print("⚠ 还没跑 numcheck.py：数字卡来自转写，转写常把千分之写成 %——先核对原声再出片")
+print("下一步：python3 stock.py %s auto --decompose %s → 看 broll/stock/auto_review.jpg 填 auto_review.json → stock.py redo（有 replace 时）→ build.py %s --decompose %s → render.py --stills 看关键帧" % (proj, out, proj, out))

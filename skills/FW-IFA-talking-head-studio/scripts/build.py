@@ -74,6 +74,27 @@ def probe_img(p):
 
 
 warn = []
+# 自动素材审片（stock.py auto → review → redo）：自动取的素材没人挑过，审片没判完就报（10-29：6 条里 4 条是外国国旗与外国政府楼）
+_rv_p = P(proj, "broll", "stock", "auto_review.json")
+if os.path.exists(_rv_p):
+    _rv = load(_rv_p).get("shots", {})
+    _auto = [s_ for s_ in dec.get("shots", []) if str(s_.get("pick", "")).startswith("stock:st_%s" % s_["id"].lower())]
+    _todo = [s_["id"] for s_ in _auto if _rv.get(s_["id"], {}).get("verdict") != "keep"]
+    if _todo:
+        warn.append("自动素材没审完：%s（看 broll/stock/auto_review.jpg，在 auto_review.json 填 verdict，replace 的跑 stock.py redo）" % "、".join(_todo))
+elif dec.get("lite"):
+    warn.append("极简档还没出审片表：先跑 stock.py <工程> auto（或 review）再判")
+# 数字核对原声（numcheck.py）：转写会把「千分之一」写成「1%」——没核对、或核对出对不上的，先报（10-29：屏上 1%–1.5% 实为千分之）
+_nc_p = P(proj, "work", "numcheck.json")
+if not os.path.exists(_nc_p):
+    warn.append("屏上数字还没核对原声：先跑 numcheck.py（转写常把千分之／万分之写成 %，或吞掉「点」）")
+else:
+    _nc = load(_nc_p)
+    if os.path.getmtime(P(proj, "transcript.json")) > os.path.getmtime(_nc_p) + 1:
+        warn.append("transcript.json 在数字核对之后又改过：重跑 numcheck.py")
+    for _r in _nc.get("rows", []):
+        if _r.get("flag"):
+            warn.append("数字对不上原声 %s「%s」：%s" % (_r["id"], _r["text"][:16], _r["flag"]))
 
 # ---------- 1. 全片逐字表 ----------
 chars = []

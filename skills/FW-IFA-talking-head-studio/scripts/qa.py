@@ -537,6 +537,19 @@ if raw_a:
     pk = 20 * np.log10(np.abs(xa).max() + 1e-9)
     add("片尾杂音", pk <= -30, "最后一个字后人声轨峰值 %.1f dBFS" % pk, "≤ −30 dBFS")
 
+# 8c 数字核对原声（numcheck.py）：屏上的数字来自转写，转写会规范化口语数字（千分之→%），必须对过原声
+_nc_p = P(proj, "work", "numcheck.json")
+if os.path.exists(_nc_p):
+    _nc = load(_nc_p)
+    _bad = [r for r in _nc.get("rows", []) if r.get("flag")]
+    _stale = os.path.getmtime(P(proj, "transcript.json")) > os.path.getmtime(_nc_p) + 1
+    _warn = [r["id"] for r in _nc.get("rows", []) if r.get("warn") and not r.get("verified")]
+    add("数字已核对原声", not _bad and not _stale, ("%d 句对不上：%s" % (len(_bad), "；".join("%s「%s」" % (r["id"], r["text"][:12]) for r in _bad[:4])) if _bad
+        else "转写改过、要重跑 numcheck" if _stale else "带数字 %d 句全部对上%s" % (len(_nc.get("rows", [])), ("（重听漏字待人听：%s）" % "、".join(_warn)) if _warn else "")),
+        "百分号类单位与数值都和原声一致；对不上的人听后标 num_verified")
+else:
+    add("数字已核对原声", False, "没跑 numcheck.py", "百分号类单位与数值都和原声一致")
+
 # 9 节奏与占比
 NF = tl["durationInFrames"]
 cov = np.zeros(NF, bool)

@@ -6,7 +6,9 @@
     python3 stock.py <工程> get <源>:<id> <存成的名字> [<源>:<id> <名字> ...]
     python3 stock.py <工程> get <pexels 纯数字 id> <名字>              # 老写法，默认当 Pexels
     python3 stock.py <工程> plan [--decompose decompose_F.json]        # 按镜头批量检索：每个缺素材的 B 镜头一张候选图（带自动体检角标）
-    python3 stock.py <工程> auto --decompose decompose_lite.json       # 极简档：不用人挑，每个缺素材的 B 镜头自动取第一条「干净」候选并写回 pick
+    python3 stock.py <工程> auto --decompose decompose_lite.json       # 极简档：每个缺素材的 B 镜头自动取第一条「干净」候选，写回 pick，并出审片表
+    python3 stock.py <工程> review --decompose decompose_lite.json     # 只重出审片表 auto_review.jpg（前画面｜素材三帧｜后画面＋自动量的亮度／色调差）
+    python3 stock.py <工程> redo --decompose decompose_lite.json       # 重取审片里判 replace 的镜头（排除被否过的），drop 的删掉，再出审片表
     python3 stock.py <工程> lexicon "原话"                             # 看这句话按概念词表会搜哪些画面词
     python3 stock.py <工程> search "画面词" --source ov                 # Openverse 图片（CC 可商用且可改编，免 key）
 
@@ -604,7 +606,7 @@ elif cmd == "search":
     with ThreadPoolExecutor(3) as ex:
         for q, r in ex.map(lambda q: do_search(q, pick_sources()), args):
             print("==", q, len(r), "条 →", os.path.join(D, "_thumbs", "sheet_%s.jpg" % slug(q)))
-elif cmd in ("plan", "lexicon", "auto"):
+elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
     # 概念词表：抽象财经概念 → 看得见的画面（R0 的做法：「监管看得见」配数据地球，「长期」配钟表与公路）
     LEX = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "template", "broll_lexicon.json")))
     def suggest(text):
@@ -618,64 +620,168 @@ elif cmd in ("plan", "lexicon", "auto"):
             for c in suggest(t):
                 print("「%s」→ %s：%s  （避开：%s）" % (t, c["name"], " | ".join(c["queries"]), "、".join(c.get("avoid", [])) or "—"))
         sys.exit(0)
-    if cmd == "auto":
+    if cmd in ("auto", "review", "redo"):
+        # 极简档的素材流程：auto 自动取 → review 出审片表（一张图）→ Agent 看图逐条判 → redo 重取判「换」的 → 再 review
+        # 审片标准与填写方法见 references/12 §审片
         DEFAULTS = [["hong kong city skyline", "modern office window city view"], ["hong kong street tram", "city traffic night"],
                     ["business meeting office", "documents desk close up"]]
         dec_p = P(proj, args[args.index("--decompose") + 1]) if "--decompose" in args else P(proj, "decompose.json")
         dec = json.load(open(dec_p))
-        used, n_ok, k_def = set(), 0, 0
-        for sh in dec.get("shots", []):
-            if sh.get("type") not in ("B", "S") or sh.get("pick") or sh.get("image"):
-                continue
-            qs = sh.get("q") or [q for c in suggest(sh.get("cover", "")) for q in c["queries"][:2]][:3]
-            if not qs:
-                qs = DEFAULTS[k_def % len(DEFAULTS)]; k_def += 1
-            landscape = False
-            best = None
-            r_ = n_ok % len(qs)
-            for q in qs[r_:] + qs[:r_]:   # 轮换检索词：不让每一镜都搜同一个词
-                _, r = do_search(q, pick_sources("pexels,pixabay"))
-                for it, pth in r:
-                    key = "%s:%s" % (it["src"], it["id"])
-                    if key not in used and not FLAGS.get(pth):
-                        best = (key, it); break
-                if best:
-                    break
-            if not best:
-                print("· %s 没找到干净候选（字／脸／暗／静都有角标），留空" % sh["id"]); continue
-            used.add(best[0])
-            name = "st_%s" % sh["id"].lower()
-            do_get(best[0], name)
-            fp_ = os.path.join(D, name + ".mp4")
-            if not (os.path.exists(fp_) and os.path.getsize(fp_) > 50000):
-                print("· %s 下载失败，留空" % sh["id"]); continue
-            sh["pick"] = "stock:" + name
-            sh.setdefault("in", 0.5)
-            n_ok += 1
-            print("✓ %s ← %s（q=%s）" % (sh["id"], best[0], qs[0]))
-        # 一张核对总图：自动取的素材没人挑过，只看这一张图就够（对题吗？有外国国旗／陌生人正脸吗？）
-        try:
+        rv_p = os.path.join(D, "auto_review.json")
+        rv = json.load(open(rv_p)) if os.path.exists(rv_p) else {"_说明": "", "shots": {}}
+        picks_p = os.path.join(D, "stock_picks.json")
+
+        def pick_key(sh):
+            nm = str(sh.get("pick", ""))[6:]
+            it = (json.load(open(picks_p)) if os.path.exists(picks_p) else {}).get(nm, {})
+            return "%s:%s" % (it.get("source"), it.get("id")) if it else None
+
+        def auto_pick(only=None):
+            used = {pick_key(sh) for sh in dec.get("shots", []) if str(sh.get("pick", "")).startswith("stock:")} - {None}
+            n_ok, k_def = 0, 0
+            for sh in dec.get("shots", []):
+                if sh.get("type") not in ("B", "S") or sh.get("image") or (only is None and sh.get("pick")) or (only is not None and sh["id"] not in only):
+                    continue
+                rej = set(rv["shots"].get(sh["id"], {}).get("rejected", []))
+                qs = sh.get("q") or [q for c in suggest(sh.get("cover", "")) for q in c["queries"][:2]][:3]
+                if not qs:
+                    qs = DEFAULTS[k_def % len(DEFAULTS)]; k_def += 1
+                best = None
+                r_ = n_ok % len(qs) if only is None else 0   # 首轮轮换检索词（不让每一镜都搜同一个词）；redo 按审片时写的 q 顺序来
+                for q in qs[r_:] + qs[:r_]:
+                    _, r = do_search(q, pick_sources("pexels,pixabay"))
+                    for it, pth in r:
+                        key = "%s:%s" % (it["src"], it["id"])
+                        if key not in used and key not in rej and not FLAGS.get(pth):
+                            best = (key, it, q); break
+                    if best:
+                        break
+                if not best:
+                    print("· %s 没找到干净候选（字／脸／暗／静都有角标，或都被否过），留空——换 q 再 redo" % sh["id"]); continue
+                used.add(best[0])
+                name = "st_%s" % sh["id"].lower()
+                fp_ = os.path.join(D, name + ".mp4")
+                if os.path.exists(fp_):
+                    os.remove(fp_)   # redo：同名文件先删，否则 do_get 会以为已经下好了
+                do_get(best[0], name)
+                if not (os.path.exists(fp_) and os.path.getsize(fp_) > 50000):
+                    print("· %s 下载失败，留空" % sh["id"]); continue
+                sh["pick"] = "stock:" + name
+                sh.setdefault("in", 0.5)
+                rv["shots"].setdefault(sh["id"], {}).update({"q_used": best[2], "verdict": "", "reason": ""})
+                n_ok += 1
+                print("✓ %s ← %s（q=%s）" % (sh["id"], best[0], best[2]))
+            return n_ok
+
+        def make_review():
+            # 审片表：每条自动素材一行——[前一个画面][素材 3 帧][后一个画面]＋这句原话、检索词、自动量的亮度差／色调差／相邻同词
             from PIL import Image, ImageDraw
-            picked_ = [sh for sh in dec.get("shots", []) if str(sh.get("pick", "")).startswith("stock:st_")]
-            tiles = []
-            for sh in picked_:
-                nm = sh["pick"][6:]
-                th_ = [f for f in glob.glob(os.path.join(D, "_thumbs", "*.jpg")) if "sheet_" not in f]
-                key = json.load(open(os.path.join(D, "stock_picks.json"))).get(nm, {})
-                cand = [f for f in th_ if "_%s." % key.get("id", "?") in f]
-                if cand:
-                    tiles.append((sh["id"], cand[0], sh.get("cover", "")))
-            if tiles:
-                sheet = Image.new("RGB", (220 * len(tiles), 420), (16, 14, 12)); d_ = ImageDraw.Draw(sheet)
-                for i, (sid, fpth, cv) in enumerate(tiles):
-                    im = Image.open(fpth).convert("RGB"); im.thumbnail((210, 340)); sheet.paste(im, (i * 220 + 5, 36))
-                    d_.text((i * 220 + 6, 6), sid, fill="yellow", font=font(22)); d_.text((i * 220 + 6, 384), cv[:9], fill="white", font=font(18))
-                sheet.save(os.path.join(D, "auto_check.jpg"), quality=85)
-                print("核对总图（看这一张就够）→", os.path.join(D, "auto_check.jpg"))
-        except Exception as e_:
-            print("· 核对总图没出：", str(e_)[:60])
+            import numpy as _np
+            tr_ = json.load(open(P(proj, "transcript.json")))
+            sents = tr_["sentences"]
+            aroll = P(proj, "work", "aroll.mp4")
+            strip_ = lambda t: re.sub(r"[，。、！？；：,.!?;: 「」“”…]", "", t or "")
+
+            def sent_of(cover):
+                head = strip_(cover.split("…")[0])[:6]
+                return next((x for x in sents if head and head in strip_(x.get("text", ""))), None)
+
+            def grab(path, t, w=150, h=266):
+                r_ = subprocess.run(["ffmpeg", "-v", "error", "-ss", "%.2f" % max(t, 0), "-i", path, "-frames:v", "1",
+                                     "-vf", "scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d" % (w, h, w, h), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                    capture_output=True)
+                if len(r_.stdout) != w * h * 3:
+                    return None
+                return Image.frombytes("RGB", (w, h), r_.stdout)
+
+            def stats(im):
+                a_ = _np.asarray(im).astype(float)
+                return float((0.2126 * a_[..., 0] + 0.7152 * a_[..., 1] + 0.0722 * a_[..., 2]).mean()), float((a_[..., 0] - a_[..., 2]).mean())
+
+            bs = [sh for sh in dec.get("shots", []) if sh.get("type") in ("B", "S") and str(sh.get("pick", "")).startswith("stock:")]
+            rows = []
+            for sh in bs:
+                st_ = sent_of(sh.get("cover", ""))
+                t0, t1 = (st_["start"], st_["end"]) if st_ else (None, None)
+                clip = os.path.join(D, str(sh["pick"])[6:] + ".mp4")
+                cin = float(sh.get("in", 0.5))
+                frames = [grab(clip, cin + k) for k in (0.3, 1.3, 2.3)]
+                prev_ = grab(aroll, t0 - 0.4) if (st_ and os.path.exists(aroll)) else None
+                next_ = grab(aroll, t1 + 0.4) if (st_ and os.path.exists(aroll)) else None
+                rows.append((sh, st_, frames, prev_, next_))
+            # 相邻关系：按原话出现的时间排序；两条 B-roll 之间不到 6 秒，前后画面就是另一条素材而不是她
+            rows.sort(key=lambda r: r[1]["start"] if r[1] else 1e9)
+            W_, H_ = 150, 266
+            sheet = Image.new("RGB", (W_ * 5 + 60, (H_ + 110) * max(len(rows), 1) + 40), (18, 16, 14))
+            d_ = ImageDraw.Draw(sheet)
+            d_.text((10, 8), "审片表：左＝前画面　中＝素材三帧　右＝后画面", fill="white", font=font(20))
+            hashes = {}
+            for k, (sh, st_, frames, prev_, next_) in enumerate(rows):
+                y0 = 40 + k * (H_ + 110)
+                # 重复素材：中间帧做 8×8 均值指纹，和其他镜头几乎一样就标（10-29：文件和记录对不上，两镜成了同一条）
+                if frames[1] is not None:
+                    _h = _np.asarray(frames[1].convert("L").resize((8, 8))).astype(float)
+                    hashes[sh["id"]] = (_h > _h.mean()).flatten()
+                if k > 0 and rows[k - 1][1] and st_ and st_["start"] - rows[k - 1][1]["end"] < 6:
+                    prev_ = rows[k - 1][2][-1] or prev_
+                if k + 1 < len(rows) and rows[k + 1][1] and st_ and rows[k + 1][1]["start"] - st_["end"] < 6:
+                    next_ = rows[k + 1][2][0] or next_
+                flags = []
+                ok_frames = [f for f in frames if f is not None]
+                if ok_frames:
+                    yb, cb = map(_np.mean, zip(*[stats(f) for f in ok_frames]))
+                    for lab, nb in (("前", prev_), ("后", next_)):
+                        if nb is not None:
+                            yn, cn = stats(nb)
+                            if abs(yb - yn) > 55:
+                                flags.append("和%s画面亮度差 %d" % (lab, abs(yb - yn)))
+                            if abs(cb - cn) > 45:   # 只是提醒：蓝天接暖色室内本来就会差 40 上下，判断看突不突兀
+                                flags.append("和%s画面色调差 %d（冷暖跳）" % (lab, abs(cb - cn)))
+                _qa, _qb = rv["shots"].get(rows[k - 1][0]["id"], {}).get("q_used") if k > 0 else None, rv["shots"].get(sh["id"], {}).get("q_used")
+                if _qa and _qa == _qb:
+                    flags.append("和上一条同一检索词（同类画面相邻）")
+                if sh["id"] in hashes:
+                    for oid, oh in hashes.items():
+                        if oid != sh["id"] and int((oh != hashes[sh["id"]]).sum()) <= 6:
+                            flags.append("和 %s 画面几乎一样（重复素材）" % oid)
+                ent = rv["shots"].setdefault(sh["id"], {})
+                ent.update({"cover": sh.get("cover", ""), "sentence": (st_ or {}).get("text", ""), "pick": sh["pick"], "auto_flags": flags})
+                ent.setdefault("verdict", ""); ent.setdefault("reason", "")
+                d_.text((10, y0 + 4), "%s　原话：%s" % (sh["id"], ((st_ or {}).get("text") or sh.get("cover", ""))[:34]), fill="yellow", font=font(22))
+                d_.text((10, y0 + 32), "检索词：%s　｜　%s" % (ent.get("q_used", "—"), "；".join(flags) or "自动项无异常"), fill=(240, 180, 120) if flags else (170, 200, 170), font=font(18))
+                for j, im in enumerate([prev_] + frames + [next_]):
+                    x = 10 + j * (W_ + 10)
+                    if im is not None:
+                        sheet.paste(im, (x, y0 + 62))
+                    d_.rectangle([x, y0 + 62, x + W_, y0 + 62 + H_], outline=(90, 90, 90) if j in (0, 4) else (230, 190, 90), width=2)
+            out_ = os.path.join(D, "auto_review.jpg")
+            sheet.save(out_, quality=85)
+            rv["_说明"] = ("自动素材审片：看 auto_review.jpg，每条填 verdict（keep／replace／drop）和 reason；replace 可在 decompose 该镜写新的 q。"
+                          "然后 stock.py <工程> redo --decompose <文件> 重取所有 replace 的镜头，再 review。build 会对没审完的报警。")
+            json.dump(rv, open(rv_p, "w"), ensure_ascii=False, indent=1)
+            print("审片表 → %s（%d 条）；判完写 %s" % (out_, len(rows), rv_p))
+
+        if cmd == "auto":
+            n = auto_pick()
+            print("自动取素材 %d 条" % n)
+        elif cmd == "redo":
+            ids = [x for x, e in rv["shots"].items() if e.get("verdict") == "replace"]
+            if "--ids" in args:
+                ids = args[args.index("--ids") + 1].split(",")
+            for sh in dec.get("shots", []):
+                if sh["id"] in ids:
+                    k_ = pick_key(sh)
+                    if k_:
+                        rv["shots"].setdefault(sh["id"], {}).setdefault("rejected", []).append(k_)
+                    sh.pop("pick", None)
+            for sh in dec.get("shots", []):
+                if sh["id"] in [x for x, e in rv["shots"].items() if e.get("verdict") == "drop"]:
+                    sh["_dropped"] = True
+            dec["shots"] = [sh for sh in dec["shots"] if not sh.pop("_dropped", False)]
+            n = auto_pick(only=set(ids))
+            print("重取 %d／%d 条" % (n, len(ids)))
         json.dump(dec, open(dec_p, "w"), ensure_ascii=False, indent=1)
-        print("自动取素材 %d 条，已写回 %s" % (n_ok, dec_p))
+        make_review()
         sys.exit(0)
     dec_p = P(proj, "decompose.json")
     if "--decompose" in args:

@@ -68,6 +68,9 @@ const Scrim: React.FC = () => {
   const f = useCurrentFrame();
   const s = shotAt(f);
   const face = isFaceFrame(s);
+  // 皱纸单是一整张白纸、字幕本来就让位：不画任何托底（10-29 验片：字幕托底那条灰带压在第 3、4 条上，底部托底把纸面压灰）
+  if (paperOn(s)) return null;
+  const cy = lowCap(s) ? FB.capLowCY : FB.capCY;   // 卡片、原文截图在屏时字幕落低位，托底跟着走（不压在原文纸面上）
   return (
     <>
       {face && !(insertAt(f) || {}).pos?.startsWith?.('top') ? (
@@ -75,7 +78,7 @@ const Scrim: React.FC = () => {
           background: 'linear-gradient(180deg, rgba(0,0,0,0.40) 0%, rgba(0,0,0,0.20) 52%, rgba(0,0,0,0) 100%)'}} />
       ) : null}
       {/* 字幕托底：默认 0.20；亮底 B-roll 由 build 量字幕那一带的亮度给 capScrim（0.20–0.55） */}
-      <div style={{position: 'absolute', left: 0, right: 0, top: FB.capCY - 170, height: 340, pointerEvents: 'none',
+      <div style={{position: 'absolute', left: 0, right: 0, top: cy - 170, height: 340, pointerEvents: 'none',
         background: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,${(s as any)?.capScrim ?? 0.2}) 38%, rgba(0,0,0,${(s as any)?.capScrim ?? 0.2}) 62%, rgba(0,0,0,0) 100%)`}} />
       {/* 底部托底托住声明：白桌面、白墙这类亮底上 0.30 不够（10-29：声明白字压白桌面看不清），加深到 0.55 */}
       <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 320, pointerEvents: 'none',
@@ -159,12 +162,16 @@ const paperOn = (s: any) => !!s && s.type === 'I' && s.info && s.info.surface ==
 const hideCaption = (f: number, s?: any) => textsAt(f).some((x: any) => x.kind === 'stack' || x.kind === 'scatter') || paperOn(s);
 
 // ---------- ③ 底部声明 ----------
-const Foot: React.FC = () => (
-  <div style={{position: 'absolute', left: 0, right: 0, top: FB.footCY - FB.footSize * 0.7, textAlign: 'center', fontFamily: F.serif, fontWeight: 600,
-    fontSize: FB.footSize, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.72)', textShadow: '0 1px 3px rgba(0,0,0,0.75), 0 2px 10px rgba(0,0,0,0.55)'}}>
-    {tl.disclaimer || '本内容仅作为科普，不构成任何投资建议'}
-  </div>
-);
+const Foot: React.FC = () => {
+  const paper = paperOn(shotAt(useCurrentFrame()));   // 白纸上换深墨色、不加影（白字压白纸看不见）
+  return (
+    <div style={{position: 'absolute', left: 0, right: 0, top: FB.footCY - FB.footSize * 0.7, textAlign: 'center', fontFamily: F.serif, fontWeight: 600,
+      fontSize: FB.footSize, letterSpacing: '0.06em', color: paper ? 'rgba(74,60,44,0.72)' : 'rgba(255,255,255,0.72)',
+      textShadow: paper ? 'none' : '0 1px 3px rgba(0,0,0,0.75), 0 2px 10px rgba(0,0,0,0.55)'}}>
+      {tl.disclaimer || '本内容仅作为科普，不构成任何投资建议'}
+    </div>
+  );
+};
 const Over: React.FC = () => <><Scrim /><Foot /></>;
 
 // 真实性角标（示意画面／AI 生成）：落在声明上方右侧，小而清楚
