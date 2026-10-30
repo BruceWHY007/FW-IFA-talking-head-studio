@@ -42,21 +42,29 @@ def cn2num(s):
         x, y = re.split(r"[点.]", s, 1)
         frac = "".join(str(D[c]) if c in D else c for c in y if c in D or c.isdigit())
         return cn2num(x or "零") + (float("0." + frac) if frac else 0)
+    # 年份、编号按位读：「二零二五」＝2025（没有十百千万亿，且两个字以上）
+    if len(s) >= 2 and not re.search(r"[十百千万亿]", s) and all(c in D or c.isdigit() for c in s):
+        return float("".join(str(D[c]) if c in D else c for c in s))
     total, sec, num = 0, 0, 0
+    last_u, zero_after = 0, False   # 口语省略：「一千二」＝1200、「两万三」＝23000、「三百五」＝350（末位紧跟在单位后、中间没「零」）
     for c in s:
         if c.isdigit():
             num = num * 10 + int(c)
         elif c in D:
+            if c in "零〇":
+                zero_after = True
             num = D[c]
         elif c in U:
             sec += (num or 1) * U[c]
-            num = 0
+            num, last_u, zero_after = 0, U[c], False
         elif c == "万":
             total += (sec + num) * 10000
-            sec, num = 0, 0
+            sec, num, last_u, zero_after = 0, 0, 10000, False
         elif c == "亿":
             total = (total + sec + num) * 100000000
-            sec, num = 0, 0
+            sec, num, last_u, zero_after = 0, 0, 100000000, False
+    if num and last_u >= 100 and not zero_after and num < 10 and s[-1] not in U and s[-1] not in "万亿":
+        num *= last_u // 10
     return float(total + sec + num)
 
 
@@ -66,6 +74,8 @@ TOK = re.compile(r"(百分之|千分之|万分之)?([%s\d]+(?:[点.][%s\d]+)?)\s
 
 def tokens(s):
     s = s.replace("～", "-").replace("~", "-").replace("—", "-").replace("–", "-")
+    # 「2 万 1 千 2」「42 万亿」：数字和单位之间的空格去掉，才能当一个数读（10-30：76 号片 4 处误报都是这个）
+    s = re.sub(r"(?<=[%s\d])\s+(?=[%s\d])" % (CN, CN), "", s)
     raw = []
     for m in TOK.finditer(s):
         pre, num, suf = m.group(1), m.group(2), m.group(3)
@@ -75,7 +85,9 @@ def tokens(s):
         is_range_head = nxt in ("-", "到", "至")
         listed = nxt == "、" or prv == "、"   # 只认顿号并列；逗号后面的「一份文件」不是数字
         # 纯汉字数字只在「后面跟单位／前面有百分之千分之／区间一端／并列项」时算数，免得把「一份文件」的「一」也当数字
-        if not has_digit and not pre and not suf and nxt not in UNIT_AFTER and not is_range_head and not listed:
+        # 多字汉字数（四十二万亿、二万一千二）本身就是数；单字（一份、两个人里的「一」「两」）才要看前后文。句末的空字符串不算单位
+        multi = len(num) >= 2 and bool(re.search(r"[十百千万亿]", num))
+        if not has_digit and not pre and not suf and not multi and (nxt == "" or nxt not in UNIT_AFTER) and not is_range_head and not listed:
             continue
         unit = {"百分之": "%", "千分之": "‰", "万分之": "‱"}.get(pre) or suf or ""
         raw.append([cn2num(num), unit, m.start(), m.end(), is_range_head, prv])

@@ -11,7 +11,10 @@ let env = ProcessInfo.processInfo.environment
 let minChars = Int(env["OCR_MIN_CHARS"] ?? "") ?? 4
 let minConf = Float(env["OCR_MIN_CONF"] ?? "") ?? 0.5
 let fm = FileManager.default
-let files = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasSuffix(".jpg") }.sorted()
+let files = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter {
+    let e = $0.lowercased()
+    return e.hasSuffix(".jpg") || e.hasSuffix(".jpeg") || e.hasSuffix(".png")
+}.sorted()
 var result: [String: [[String: Any]]] = [:]
 for f in files {
     let url = URL(fileURLWithPath: dir).appendingPathComponent(f)

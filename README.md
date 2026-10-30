@@ -37,6 +37,8 @@ bash ~/.agents/skills/fw-ifa-talking-head-studio/scripts/doctor.sh    # 逐项�
 
 它会先发一个文字菜单让你选风格（1–7，默认 F）和档位（完整版／极简档），不回就按默认做。想先用自己的画面看样子，再让它跑 `catalog.py --video <原片>`。
 
+**任何模型执行前先读 `skills/FW-IFA-talking-head-studio/references/00_执行卡.md`**（一页：每步命令、过不去的条件、禁止事项）。
+
 **任何 Agent 要从零复现，先读 `skills/FW-IFA-talking-head-studio/references/13_完整复现手册.md`**（数据流、文件契约、逐步命令、导演逻辑、包装设计逻辑、代码要点、验收口径、常见坑）。
 
 命令行等价：
@@ -50,13 +52,16 @@ python3 $SK/scripts/ingest.py ~/片库/项目/这一期 --prompt "专有名词"
 python3 $SK/scripts/numcheck.py ~/片库/项目/这一期              # ③.5 数字核对原声
 python3 $SK/scripts/analyze.py ~/片库/项目/这一期                # ④ 逐句拆 A-roll
 python3 $SK/scripts/trim.py ~/片库/项目/这一期 --verify          # ⑥ 剪
+python3 $SK/scripts/beats.py ~/片库/项目/这一期                  # ⑤ 逐句节拍表 work/beats.md（每句建议处理＋硬门槛）
+python3 $SK/scripts/lite_plan.py ~/片库/项目/这一期 --full --series 系列名 --episode 本期标题   # ⑤ 完整版底稿 → 逐条做完 _待升级
 python3 $SK/scripts/make.py ~/片库/项目/这一期 --bgm 配乐.mp3    # ⑩ 一条龙：组装→混音→渲染→验收
 ```
 
 极简档：
 
 ```bash
-python3 $SK/scripts/lite_plan.py ~/片库/项目/这一期 --series 系列名 --episode 本期标题
+python3 $SK/scripts/beats.py ~/片库/项目/这一期
+python3 $SK/scripts/lite_plan.py ~/片库/项目/这一期 --series 系列名 --episode 本期标题   # 改 _待改 里的每一条
 python3 $SK/scripts/stock.py ~/片库/项目/这一期 auto --decompose decompose_lite.json   # 自动取素材＋审片表
 # 看 broll/stock/auto_review.jpg，在 auto_review.json 填 keep/replace/drop；有 replace 就：
 python3 $SK/scripts/stock.py ~/片库/项目/这一期 redo --decompose decompose_lite.json

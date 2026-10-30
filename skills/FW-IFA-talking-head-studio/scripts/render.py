@@ -5,7 +5,7 @@
     python3 render.py <工程目录> --stills 3,520,1560  渲风格帧到 out/stills/（每个风格方向至少看三张：人脸＋字幕、B-roll、卡片）
     python3 render.py <工程目录>                   整片
 """
-import argparse, os, subprocess, sys, time
+import argparse, os, shutil, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kb import P, run, load, die, probe
 
@@ -90,5 +90,15 @@ if os.path.exists(mix):
 else:
     os.replace(silent, final)
     print("⚠ 还没有 audio/mix.wav，出的是无声版")
+# qa 读的是 out/成片_9x16.mp4：用 --out 起了别的名字时，同一个文件再挂一个这个名字（硬链接，不多占空间；10-30 DeepSeek 每次都要手动 cp）
+main_ = P(proj, "out", "成片_9x16.mp4")
+if a.out and not a.test and not a.frames and os.path.abspath(final) != os.path.abspath(main_):
+    if os.path.lexists(main_):
+        os.remove(main_)
+    try:
+        os.link(final, main_)
+    except OSError:
+        shutil.copy(final, main_)
+    print("  · 同一个文件也挂在 out/成片_9x16.mp4（qa 读它）")
 info = probe(final)
 print("✓ %s  %.2fs  %s  渲染用时 %.0fs" % (os.path.basename(final), info["duration"], info["video"], sec))

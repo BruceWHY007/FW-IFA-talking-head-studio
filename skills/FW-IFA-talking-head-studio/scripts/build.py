@@ -11,7 +11,7 @@ decompose.json 的写法见 references/02 §四。核心：镜头用「原话锚
 import argparse, glob, json, os, re, shutil, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from PIL import Image
-from kb import P, SKILL, FPS, run, load, save, die, probe, encoder_args, hms, clip_cuts
+from kb import P, SKILL, FPS, run, load, save, die, probe, encoder_args, hms, clip_cuts, sid_span, as_list
 import numpy as np
 
 ap = argparse.ArgumentParser()
@@ -20,6 +20,8 @@ ap.add_argument("--no-conform", action="store_true", help="只重算时间线，
 ap.add_argument("--decompose", default="decompose.json", help="换一份镜头计划（同一条原片出不同风格的版本）")
 ap.add_argument("--style", default="", help="临时换风格包：A／B／C／K1／K2／K3")
 ap.add_argument("--theme", default="", help="临时换账号主题：themes.json 里的名字")
+ap.add_argument("--draft", action="store_true", help="草稿：完整版表达层检查、审片理由检查只提醒不停（只想先看结构／空片格时用）")
+ap.add_argument("--sync-packs", action="store_true", help="把技能模板里的版式包同步进本工程（技能更新过、工程是旧的时用）")
 a = ap.parse_args()
 proj = os.path.abspath(a.proj)
 pj = load(P(proj, "project.json"), {})
@@ -38,6 +40,17 @@ ALIAS = {"A": "editorial", "B": "glass", "C": "kinetic", "K1": "evidence", "K2":
          "满幅讲述": "fullbleed", "全屏口播": "fullbleed",
          "分带刊物": "editorial", "雾金玻璃": "glass", "港刊大字": "kinetic", "证据桌": "evidence", "图解": "diagram", "IFA品牌刊": "brand", "品牌刊": "brand"}
 STYLE = ALIAS.get(str(dec.get("style", "fullbleed")).replace(" ", ""), dec.get("style", "fullbleed"))
+# 工程里的版式包是建工程时从技能模板拷来的副本：技能更新了，旧工程不会跟着变（10-27「说修了其实没修」、10-29 第一轮验片看到旧样式）
+_tpl = os.path.join(SKILL, "template", "remotion", "src", "packs")
+_pk_diff = [f for f in sorted(os.listdir(_tpl)) if os.path.isfile(os.path.join(_tpl, f)) and
+            (not os.path.exists(P(R, "src", "packs", f)) or open(os.path.join(_tpl, f), "rb").read() != open(P(R, "src", "packs", f), "rb").read())]
+PACK_MSG = []
+if _pk_diff and a.sync_packs:
+    for f in _pk_diff:
+        shutil.copy(os.path.join(_tpl, f), P(R, "src", "packs", f))
+    print("✓ 版式包已和技能模板同步：%s" % "、".join(_pk_diff))
+elif _pk_diff:
+    PACK_MSG.append("工程的版式包和技能模板不一样（%s）：技能更新过就 build --sync-packs 同步；是本工程有意改的就别同步" % "、".join(_pk_diff))
 LAYOUT = load(P(R, "src", "packs", "layout.json"))
 if STYLE not in LAYOUT:
     die("没有这个风格包：%s（可选 %s）" % (STYLE, "、".join(k for k in LAYOUT if not k.startswith("_"))))
@@ -45,6 +58,31 @@ WX, WY, WW, WH = LAYOUT[STYLE]["window"]  # 画面窗：B-roll 按它的尺寸�
 for d in ["clips", "img", "fonts"]:
     os.makedirs(P(PUB, d), exist_ok=True)
 DUR = tc["duration"]
+
+# ---------- 0.5 decompose 格式纠正与必填项（10-30：弱一点的模型最常写错的几处——能纠的自动纠，纠不了的直接停） ----------
+FIXED = []
+for s_ in dec.get("shots", []):
+    if not s_.get("cover") and s_.get("at"):
+        s_["cover"] = s_["at"]
+    if not s_.get("cover"):
+        die("镜头 %s 没写 cover（锚点）：写原话片段，或直接写句号 \"s17\"／\"s16–s19\"（句号见 work/beats.md）" % s_.get("id"))
+    if isinstance(s_.get("q"), str):
+        s_["q"] = as_list(s_["q"]); FIXED.append("%s 的 q 写成了字符串，已改成列表" % s_["id"])
+    inf_ = s_.get("info")
+    if isinstance(inf_, dict) and isinstance(inf_.get("items"), list):
+        for j_, it_ in enumerate(inf_["items"]):
+            if isinstance(it_, str):
+                inf_["items"][j_] = {"t": it_}; FIXED.append("信息卡 %s 的条目「%s」写成了字符串，已改成 {\"t\": …}（不改会只有序号没有字）" % (s_["id"], it_[:8]))
+for tx_ in dec.get("texts", []):
+    tx_["lines"] = [{"t": x, "at": x} if isinstance(x, str) else x for x in tx_.get("lines", [])]
+if isinstance(dec.get("tracker"), dict):
+    dec["tracker"]["items"] = [{"t": x, "at": x} if isinstance(x, str) else x for x in dec["tracker"].get("items", [])]
+if STYLE == "fullbleed":
+    ttl_ = dec.get("title") or {}
+    if not (ttl_.get("series") and ttl_.get("episode")):
+        die("F 包没有封面，第一帧就是刊头＝这条片子的标题：decompose 必须写 \"title\": {\"series\": 系列名, \"episode\": 本期标题}（没给就按原话拟，交付时标「拟」）")
+    ttl_.setdefault("lines", [ttl_["series"], ttl_["episode"]])
+    dec["title"] = ttl_
 
 # ---------- 0. 账号：主题（身份，固定）与形式登记（每支错开）----------
 # 登记文件放在工程的上一级目录（同一批工程共用）；一个账号的主题一旦定下就沿用，封面形式与上一支错开
@@ -73,7 +111,8 @@ def probe_img(p):
         return (0, 0)
 
 
-warn = []
+warn = list(PACK_MSG) + FIXED
+HARD = []   # 不加 --draft 就停的项
 # 自动素材审片（stock.py auto → review → redo）：自动取的素材没人挑过，审片没判完就报（10-29：6 条里 4 条是外国国旗与外国政府楼）
 _rv_p = P(proj, "broll", "stock", "auto_review.json")
 if os.path.exists(_rv_p):
@@ -82,16 +121,24 @@ if os.path.exists(_rv_p):
     _todo = [s_["id"] for s_ in _auto if _rv.get(s_["id"], {}).get("verdict") != "keep"]
     if _todo:
         warn.append("自动素材没审完：%s（看 broll/stock/auto_review.jpg，在 auto_review.json 填 verdict，replace 的跑 stock.py redo）" % "、".join(_todo))
+    # 审片理由要说得出画面里是什么（10-30：DeepSeek 一次把 6 条全写成「复审通过」，其中两条刚换过、没看图）
+    _GENERIC = {"", "通过", "复审通过", "ok", "keep", "可以", "可用", "没问题", "贴题", "保留", "合适", "符合"}
+    _thin = [s_["id"] for s_ in _auto if _rv.get(s_["id"], {}).get("verdict") == "keep"
+             and (str(_rv.get(s_["id"], {}).get("reason", "")).strip().lower() in _GENERIC or len(str(_rv.get(s_["id"], {}).get("reason", "")).strip()) < 8)]
+    if _thin:
+        HARD.append("审片理由太空：%s —— keep 也要写清画面主体是什么、为什么贴这句（≥8 字）；批量写「通过」等于没审，回去看 auto_review.jpg" % "、".join(_thin))
 elif dec.get("lite"):
     warn.append("极简档还没出审片表：先跑 stock.py <工程> auto（或 review）再判")
 # 数字核对原声（numcheck.py）：转写会把「千分之一」写成「1%」——没核对、或核对出对不上的，先报（10-29：屏上 1%–1.5% 实为千分之）
 _nc_p = P(proj, "work", "numcheck.json")
+NUM_VER = []
 if not os.path.exists(_nc_p):
     warn.append("屏上数字还没核对原声：先跑 numcheck.py（转写常把千分之／万分之写成 %，或吞掉「点」）")
 else:
     _nc = load(_nc_p)
     if os.path.getmtime(P(proj, "transcript.json")) > os.path.getmtime(_nc_p) + 1:
         warn.append("transcript.json 在数字核对之后又改过：重跑 numcheck.py")
+    NUM_VER = [_r["id"] for _r in _nc.get("rows", []) if _r.get("verified")]
     for _r in _nc.get("rows", []):
         if _r.get("flag"):
             warn.append("数字对不上原声 %s「%s」：%s" % (_r["id"], _r["text"][:16], _r["flag"]))
@@ -119,7 +166,13 @@ for r in _z:
     warn.append("逐字时间里「%s」%d 个字起点相同（%.2fs，ASR 没对上）：同卡两行已改为一起出，关键词高亮可能早，必要时按能量谷手改 transcript.json" % ("".join(c["c"] for c in r), len(r), r[0]["s"]))
 
 def find(anchor, after_idx):
-    """在全文里从 after_idx 往后找锚点，返回 (起字下标, 止字下标)。锚点里的标点和空格不参与匹配。"""
+    """在全文里从 after_idx 往后找锚点，返回 (起字下标, 止字下标)。锚点里的标点和空格不参与匹配。
+    也可以直接写句号："s17"＝这一整句，"s16–s19"＝从 s16 第一个字到 s19 最后一个字（句号见 work/beats.md）。"""
+    sp_ = sid_span(anchor)
+    if sp_:
+        ia_ = [i for i, c in enumerate(chars) if c["sid"] == sp_[0] and c["c"] not in PUNCT]
+        ib_ = [i for i, c in enumerate(chars) if c["sid"] == sp_[1] and c["c"] not in PUNCT]
+        return (ia_[0], ib_[-1]) if ia_ and ib_ and ib_[-1] >= ia_[0] else None
     def norm_find(needle, start):
         n = "".join(ch for ch in needle if ch not in PUNCT)
         idx = [i for i, ch in enumerate(TEXT) if ch not in PUNCT]
@@ -149,7 +202,7 @@ for sh in dec.get("shots", []):
     if not r:
         r = find(sh["cover"], 0)
         if not r:
-            die("镜头 %s 的锚点「%s」在剪后文字里找不到（删了？改字了？）" % (sh["id"], sh["cover"]))
+            die("镜头 %s 的锚点「%s」在剪后文字里找不到（删了？改字了？）→ 别凭印象抄原话，直接写句号 \"s17\" 或 \"s16–s19\"（句号见 work/beats.md）" % (sh["id"], sh["cover"]))
     i0, i1 = r
     cursor = i1
     # 剪辑点落在开口帧上：切进来＝这一段第一个字开口；切回去＝下一个字开口。字幕换卡与画面切换因此同帧
@@ -822,7 +875,7 @@ for c in cap_out:
         cc = {"from": p0, "to": p1, "variant": v, "cont": j > 0, "lines": lines_}
         # 入场动画只给「一段话的第一张」（前面空了 ≥8 帧）；同一段里换卡是硬切，字在开口那一帧就完整可读。
         # 有入场的卡提前 3 帧起，动画在开口帧做完（10-22 评审：每张都重播入场，开口后 4–6 帧才看得清，全片约 4.3 秒半截字）
-        cc["animate"] = (j == 0) and (p0 - prev_to >= 8)
+        cc["animate"] = (j == 0) and (p0 - prev_to >= 8) and prev_to > 0   # 全片第一张不预滚：没有上一张，预滚会早于开口（10-30 qa 超线 2 帧）
         if cc["animate"]:
             cc["from"] = max(p0 - 3, prev_to if prev_to > 0 else 0, cover_end)
         if top:
@@ -927,6 +980,8 @@ if STYLE == "fullbleed":
     a_share = a_total / DUR
     if not 0.45 <= a_share <= 0.75 and not dec.get("lite"):   # 极简档（lite_plan.py）本来就只靠字和数字卡撑节奏，不查人脸占比
         warn.append("满幅人脸占 %.0f%%（F 包区间 45–75%%，R0 实测 61%%＋插条 7%%）：%s" % (a_share * 100, "B／卡片太多，人被挤掉了" if a_share < 0.45 else "画面处理太少，会读作一条没剪的口播"))
+    elif dec.get("lite") and a_share > 0.80:
+        warn.append("极简档满幅人脸占 %.0f%%（上限 80%%）：lite_plan.py 的 --broll 调大，或在最长的人脸段补 B-roll／清单卡" % (a_share * 100))
     lays = [x.get("layout", "full") for x in out_shots if x["type"] in ("B", "S")]
     for k_ in range(len(lays) - 2):
         if lays[k_] == lays[k_ + 1] == lays[k_ + 2] and lays[k_] != "full":
@@ -1045,6 +1100,59 @@ if STYLE == "fullbleed":
         if y_ is not None:
             s_["capScrim"] = round(min(0.60, max(0.20, 0.20 + (y_ - 80) / 140 * 0.40)), 2)
 
+# ---------- 7.9 完整版表达层硬检查（10-30）----------
+# 完整版不能比极简档少东西。DeepSeek 复现时写的「完整版」只有满幅＋自创动效：金银整行、屏上字、插条、进度坞、小窗一样没用，
+# 观感还不如极简档。门槛按片长折算，Claude 定稿（49 号令 204s）每项都在门槛的 1.5–3 倍。
+# 某一项这条片子确实用不上：decompose 写 "waive": {"项名": "为什么（≥8 字）"}；只想先看结构：build --draft（只提醒不停）。
+GATE = []
+if STYLE == "fullbleed" and not dec.get("lite"):
+    mins_ = DUR / 60.0
+    n_tone = len({l["text"] for c in final_caps for l in c["lines"] if l.get("tone")})
+    lay_set = {x.get("layout", "full") for x in out_shots if x["type"] in ("B", "S")}
+    n_I = sum(1 for x in out_shots if x["type"] == "I")
+    n_G = sum(1 for x in out_shots if x["type"] == "G")
+    _all = "".join(s_["text"] for s_ in tc["sentences"])
+    _ORD = re.compile(r"^(第[一二三四五六七八九十](?![条款章节号])|[一二三四五六七八九十]是|首先|其次|最后)")
+    n_ord = sum(1 for s_ in tc["sentences"] if _ORD.match(s_["text"].strip()))
+    has_policy = bool(re.search(r"办法|条例|规定|号令|细则|指引|新规|法规|征求意见", _all))
+    n_why = sum(1 for s_ in dec.get("shots", []) if len(str(s_.get("why", "")).strip()) >= 6)
+    need = [
+        ("gold", "金银整行 captions.gold／silver（最硬的判断整行换金银，要写成字幕里连着的一段原话）", n_tone, max(3, round(mins_ * 1.5))),
+        ("texts", "屏上字 texts（step 步骤标题／stack 堆叠清单／scatter 散点关键词）", len(texts_out), max(2, round(mins_ * 1.2))),
+        ("layouts", "B-roll 画面处理种类（full／pip 方窗／glow 光晕圆／ring 细环／band 画框条／bands3 三条分带／glowband／doc 原文页）", len(lay_set), 4 if DUR >= 90 else 3),
+        ("inserts", "插条 inserts（top／bottom／corner，盖在人脸段上、她还在）", len(inserts), 1 if DUR >= 60 else 0),
+        ("info", "信息卡 I（compare／list／timeline／chart／quote；没有能拍的实物时，代码画面就是它）", n_I, 1),
+        ("why", "镜头的 why（每一镜一句话：这条画面在这句里指什么）", n_why, len(dec.get("shots", []))),
+    ]
+    if n_ord >= 3:
+        need.append(("tracker", "进度坞 tracker（口播里有 %d 句以「第一／第二／首先…」开头，逐格点亮）" % n_ord, 1 if tracker else 0, 1))
+    if has_policy:
+        need.append(("doc", "政策原文页（提到办法／规定／条例：node scripts/webshot.mjs 截官方原文，layout:\"doc\"）", 1 if "doc" in lay_set else 0, 1))
+    _waive = dec.get("waive") or {}
+    for key, label, got, want in need:
+        if got >= want:
+            continue
+        why_ = str(_waive.get(key, "")).strip()
+        if len(why_) >= 8:
+            warn.append("完整版检查「%s」%d／%d，已豁免：%s" % (key, got, want, why_))
+        else:
+            GATE.append("· %s：现在 %d，至少 %d" % (label, got, want))
+    if not 0.40 <= a_share <= 0.78:
+        GATE.append("· 满幅人脸占 %.0f%%，完整版要在 40–78%%：%s" % (a_share * 100, "卡和 B-roll 太多，人被挤掉了" if a_share < 0.40 else "画面处理太少，加 B-roll／小窗／信息卡"))
+    if n_I + n_G > max(5, round(DUR / 25)):
+        warn.append("信息卡 %d＋大字卡 %d 张偏多（这条片长建议 ≤%d）：多了像 PPT" % (n_I, n_G, max(5, round(DUR / 25))))
+if GATE or HARD:
+    msg_ = ""
+    if GATE:
+        msg_ += "完整版表达层没达标（完整版不能比极简档少；对照 references/13 §4.2「她在说什么→用什么」，每句的建议处理见 work/beats.md）：\n  " + "\n  ".join(GATE) + \
+                "\n  某项这条片子确实用不上：decompose 写 \"waive\": {\"项名\": \"理由≥8字\"}（项名：gold／texts／layouts／inserts／info／why／tracker／doc）\n"
+    if HARD:
+        msg_ += "\n".join("· " + h for h in HARD) + "\n"
+    if a.draft:
+        warn.extend(("[草稿放行] " + m) for m in msg_.strip().split("\n"))
+    else:
+        die(msg_ + "  （还在搭结构、只想先看空片格：build --draft，但 --draft 出的片子不能交付）")
+
 # ---------- 8. 写时间线 ----------
 shutil.copy(P(proj, "work", "aroll_cut.mp4"), P(PUB, "aroll_cut.mp4"))
 tl = {"fps": FPS, "width": 1080, "height": 1920, "durationInFrames": NF + (OUT if outro else 0), "style": STYLE, "outro": outro, "coverInWindow": bool(LAYOUT[STYLE].get("coverInWindow")),
@@ -1060,6 +1168,7 @@ tl = {"fps": FPS, "width": 1080, "height": 1920, "durationInFrames": NF + (OUT i
       "footer_left": (dec.get("footer_text") or {}).get("left") or "复星财富IFA",
       "footer_right": (dec.get("footer_text") or {}).get("right") or __import__("time").strftime("%Y.%m.%d")}
 save(P(R, "src", "timeline.json"), tl)
+tl["draft"] = bool(a.draft)
 save(P(proj, "timing.json"), dict(tl, _说明="全片唯一时间真源（帧，30fps）。字幕与镜头都由原话锚点算出，音效时间写秒。"))
 
 # ---------- 9. 字体子集（宋体按本片用字切，几十 KB）与质感贴图 ----------
@@ -1130,3 +1239,7 @@ print("✓ timeline：%s，%d 个镜头，%d 张字幕卡" % (hms(DUR), len(out_
 print("  占比：" + "  ".join("%s %.0f%%" % (TYPES[k], v / DUR * 100) for k, v in share.items()))
 for w in warn:
     print("  ⚠ " + w)
+if NUM_VER:
+    print("  · 数字标过「已核对」的句子：%s —— 交付时列进「待人确认清单」，请人听一遍原声（Agent 自己标的不算定论）" % "、".join(NUM_VER))
+if a.draft:
+    print("  · 这是 --draft 草稿：表达层／审片检查只提醒没拦，交付前去掉 --draft 重跑")

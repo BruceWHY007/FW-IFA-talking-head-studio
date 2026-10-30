@@ -203,3 +203,34 @@ def clip_cuts(path, thr=0.32):
     os.makedirs(os.path.dirname(cache_p), exist_ok=True)
     _j.dump(cache, open(cache_p, "w"))
     return cuts
+
+
+# ---------- 句号锚点（10-30）：decompose 里可以直接写 "s17" 或 "s16–s19"，不用一字不差抄原话 ----------
+# 弱一点的模型凭印象抄原话，十有八九差一两个字，build 就报「锚点找不到」；句号是 transcript 里现成的，抄不错。
+import re as _re
+SID_RE = _re.compile(r"^\s*(s\d+)\s*(?:[–—\-~～到至]\s*(s\d+))?\s*$")
+
+
+def sid_span(anchor):
+    """'s17' → ('s17','s17')；'s16–s19' → ('s16','s19')；不是句号写法 → None"""
+    m = SID_RE.match(str(anchor or ""))
+    return (m.group(1), m.group(2) or m.group(1)) if m else None
+
+
+def cover_text(anchor, sentences):
+    """把锚点换成可读的原话（给素材检索、审片表、提示用）。句号写法 → 那几句原话连起来；原话写法 → 原样返回。"""
+    sp = sid_span(anchor)
+    if not sp:
+        return str(anchor or "")
+    ids = [s["id"] for s in sentences]
+    if sp[0] not in ids or sp[1] not in ids:
+        return str(anchor)
+    i0, i1 = ids.index(sp[0]), ids.index(sp[1])
+    return "".join(s.get("text", "") for s in sentences[i0:i1 + 1])
+
+
+def as_list(x):
+    """检索词 q 等字段：写成字符串也当一条（10-30：q 写成字符串被逐字搜，取回「金属环」「街舞」）"""
+    if x is None:
+        return []
+    return [x] if isinstance(x, str) else list(x)

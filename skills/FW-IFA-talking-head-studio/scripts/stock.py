@@ -27,7 +27,7 @@ Pexels 有两条路：设了 PEXELS_API_KEY 就走官方 API（竖版在服务�
 import glob, json, os, re, subprocess, sys, time, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, die, has, font
+from kb import P, die, has, font, sid_span, cover_text, as_list
 
 if len(sys.argv) < 3:
     die(__doc__)
@@ -627,6 +627,9 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
                     ["business meeting office", "documents desk close up"]]
         dec_p = P(proj, args[args.index("--decompose") + 1]) if "--decompose" in args else P(proj, "decompose.json")
         dec = json.load(open(dec_p))
+        _tr_p = P(proj, "work", "transcript_cut.json") if os.path.exists(P(proj, "work", "transcript_cut.json")) else P(proj, "transcript.json")
+        SENTS = json.load(open(_tr_p))["sentences"]
+        ctext = lambda sh: cover_text(sh.get("cover", ""), SENTS)
         rv_p = os.path.join(D, "auto_review.json")
         rv = json.load(open(rv_p)) if os.path.exists(rv_p) else {"_说明": "", "shots": {}}
         picks_p = os.path.join(D, "stock_picks.json")
@@ -643,7 +646,7 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
                 if sh.get("type") not in ("B", "S") or sh.get("image") or (only is None and sh.get("pick")) or (only is not None and sh["id"] not in only):
                     continue
                 rej = set(rv["shots"].get(sh["id"], {}).get("rejected", []))
-                qs = sh.get("q") or [q for c in suggest(sh.get("cover", "")) for q in c["queries"][:2]][:3]
+                qs = as_list(sh.get("q")) or [q for c in suggest(ctext(sh)) for q in c["queries"][:2]][:3]
                 if not qs:
                     qs = DEFAULTS[k_def % len(DEFAULTS)]; k_def += 1
                 best = None
@@ -683,6 +686,9 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
             strip_ = lambda t: re.sub(r"[，。、！？；：,.!?;: 「」“”…]", "", t or "")
 
             def sent_of(cover):
+                sp_ = sid_span(cover)
+                if sp_:
+                    return next((x for x in sents if x.get("id") == sp_[0]), None)
                 head = strip_(cover.split("…")[0])[:6]
                 return next((x for x in sents if head and head in strip_(x.get("text", ""))), None)
 
@@ -766,6 +772,11 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
             print("自动取素材 %d 条" % n)
         elif cmd == "redo":
             ids = [x for x, e in rv["shots"].items() if e.get("verdict") == "replace"]
+            for sh in dec.get("shots", []):
+                e_ = rv["shots"].get(sh["id"], {})
+                qs_ = as_list(sh.get("q"))
+                if sh["id"] not in ids and qs_ and e_.get("verdict") != "keep" and e_.get("q_used") and e_["q_used"] not in qs_:
+                    ids.append(sh["id"]); print("· %s 的 q 改过（原来用的「%s」），一起重取" % (sh["id"], e_["q_used"]))
             if "--ids" in args:
                 ids = args[args.index("--ids") + 1].split(",")
             for sh in dec.get("shots", []):
@@ -787,6 +798,8 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
     if "--decompose" in args:
         dec_p = P(proj, args[args.index("--decompose") + 1])
     dec = json.load(open(dec_p))
+    _trp = P(proj, "work", "transcript_cut.json") if os.path.exists(P(proj, "work", "transcript_cut.json")) else P(proj, "transcript.json")
+    SENTS_P = json.load(open(_trp))["sentences"]
     PD = os.path.join(D, "plan")
     os.makedirs(PD, exist_ok=True)
     plan = {}
@@ -794,7 +807,7 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
     for sh in dec.get("shots", []):
         if sh.get("type") not in ("B", "S") or sh.get("pick") or sh.get("image"):
             continue
-        qs = sh.get("q") or [q for c in suggest(sh.get("cover", "") + sh.get("why", "")) for q in c["queries"][:2]][:3]
+        qs = as_list(sh.get("q")) or [q for c in suggest(cover_text(sh.get("cover", ""), SENTS_P) + sh.get("why", "")) for q in c["queries"][:2]][:3]
         if not qs:
             print("· %s 没写 q，词表也没命中：在 decompose 里给这镜写 2–3 个英文画面词（\"q\": [...]）" % sh["id"])
             continue
