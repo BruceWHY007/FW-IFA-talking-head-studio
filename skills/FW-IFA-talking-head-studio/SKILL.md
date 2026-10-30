@@ -87,6 +87,7 @@ quote／compare／list／timeline／chart，数据必须有来源）。两件并
 ## 3 · B-roll 三路来源（详见 `03`）
 
 **用户给的 → 免费素材库（Pexels／Coverr／Mixkit 三个源，`stock.py --source all`）→ AI 生成**，按这个优先级；本地不够或重复就去图库补，两路混着用。看缩略图挑，不看文件名。
+**选素材先走 `03` §零 的推导链**：这句有没有能拍的东西 → 写 `see`（观众应该看到什么）→ 按 see 写 `q` → 看候选对着 see 挑（不收第一个）→ 放回上下文复核。没有能拍的东西就不配 B-roll。完整版缺 see、同一素材用第 3 次，build 直接停。
 横版 1080p 裁竖版会糊（只剩 607 像素宽）：主体占满宽度的走**画框条**（`fit: band`），build.py 会报警。
 AI 生成的渠道全在 `template/gen_providers.json`（RunningHub 应用／RunningHub 工作流／Seedance／海螺／可灵／fal／自定义），
 **默认全部关闭**；没接入就只出提示词卡，用户拿去网页生成后放回 `broll/gen/`。接入了也要先报条数和费用，用户点头才 `--yes`。

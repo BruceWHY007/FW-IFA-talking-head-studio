@@ -301,7 +301,10 @@ if zero:
 from collections import Counter as _C
 _picks = _C(s.get("pick") for s in shots if s.get("pick"))
 for _p, _n in _picks.items():
-    if _n >= 4:
+    if _n > 2 and not dec.get("lite"):
+        # 10-30：DeepSeek 先下 3–5 条通用香港素材再分给各句，一条天际线用了 5 次——完整版直接停
+        HARD.append("同一段素材用了 %d 次：%s——一条素材最多 2 次；每条 B-roll 按自己那句的 see 去找，不许先下几条通用素材再分给各句" % (_n, _p))
+    elif _n >= 3:
         warn.append("同一段素材用了 %d 次：%s（规则：一支片子里同一条素材最多 2 次，第三次起换素材或上图卡；本地没有就按 03 的规则去免费素材库找）" % (_n, _p))
 _end = (dec.get("end") or {})
 if _end:
@@ -1116,6 +1119,8 @@ if STYLE == "fullbleed" and not dec.get("lite"):
     n_ord = sum(1 for s_ in tc["sentences"] if _ORD.match(s_["text"].strip()))
     has_policy = bool(re.search(r"办法|条例|规定|号令|细则|指引|新规|法规|征求意见", _all))
     n_why = sum(1 for s_ in dec.get("shots", []) if len(str(s_.get("why", "")).strip()) >= 6)
+    _bshots = [s_ for s_ in dec.get("shots", []) if s_["type"] in ("B", "S") and s_.get("layout") != "doc" and not str(s_.get("pick", "")).startswith("lib:")]
+    n_see = sum(1 for s_ in _bshots if len(str(s_.get("see", "")).strip()) >= 4)
     need = [
         ("gold", "金银整行 captions.gold／silver（最硬的判断整行换金银，要写成字幕里连着的一段原话）", n_tone, max(3, round(mins_ * 1.5))),
         ("texts", "屏上字 texts（step 步骤标题／stack 堆叠清单／scatter 散点关键词）", len(texts_out), max(2, round(mins_ * 1.2))),
@@ -1123,6 +1128,7 @@ if STYLE == "fullbleed" and not dec.get("lite"):
         ("inserts", "插条 inserts（top／bottom／corner，盖在人脸段上、她还在）", len(inserts), 1 if DUR >= 60 else 0),
         ("info", "信息卡 I（compare／list／timeline／chart／quote；没有能拍的实物时，代码画面就是它）", n_I, 1),
         ("why", "镜头的 why（每一镜一句话：这条画面在这句里指什么）", n_why, len(dec.get("shots", []))),
+        ("see", "B-roll 的 see（观众应该看到什么，具体到地点／物件，例「中环中银大厦白天外立面」；先写 see 再按它搜素材）", n_see, len(_bshots)),
     ]
     if n_ord >= 3:
         need.append(("tracker", "进度坞 tracker（口播里有 %d 句以「第一／第二／首先…」开头，逐格点亮）" % n_ord, 1 if tracker else 0, 1))

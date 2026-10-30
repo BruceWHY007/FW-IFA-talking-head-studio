@@ -754,7 +754,11 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
                 ent.update({"cover": sh.get("cover", ""), "sentence": (st_ or {}).get("text", ""), "pick": sh["pick"], "auto_flags": flags})
                 ent.setdefault("verdict", ""); ent.setdefault("reason", "")
                 d_.text((10, y0 + 4), "%s　原话：%s" % (sh["id"], ((st_ or {}).get("text") or sh.get("cover", ""))[:34]), fill="yellow", font=font(22))
-                d_.text((10, y0 + 32), "检索词：%s　｜　%s" % (ent.get("q_used", "—"), "；".join(flags) or "自动项无异常"), fill=(240, 180, 120) if flags else (170, 200, 170), font=font(18))
+                # 「应该看到」印在素材旁边：判的是「画面里是不是 see 说的那个东西」，不是「看着还行」（10-30：DeepSeek 审片只问能不能用，接受了递钥匙、码头系船柱）
+                ent["see"] = sh.get("see", "")
+                d_.text((10, y0 + 32), "应该看到：%s　｜　检索词：%s" % ((sh.get("see") or "（没写 see：先补上再判）")[:28], ent.get("q_used", "—")),
+                        fill=(255, 225, 150) if sh.get("see") else (255, 120, 110), font=font(18))
+                d_.text((10, y0 + 66 + H_), "自动提醒：%s" % ("；".join(flags) or "无"), fill=(240, 180, 120) if flags else (150, 170, 150), font=font(17))
                 for j, im in enumerate([prev_] + frames + [next_]):
                     x = 10 + j * (W_ + 10)
                     if im is not None:
@@ -827,7 +831,7 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
         cw, ch = 200, 356
         sheet = Image.new("RGB", (cw * 8, ch * max(1, (len(uniq) + 7) // 8) + 44), (16, 14, 12))
         d = ImageDraw.Draw(sheet)
-        d.text((10, 8), "%s · %s · q=%s" % (sh["id"], sh.get("cover", "")[:24], " / ".join(qs))[:110], fill="white", font=font(22))
+        d.text((10, 8), ("%s · 应该看到：%s · q=%s" % (sh["id"], sh.get("see") or cover_text(sh.get("cover", ""), SENTS_P)[:20], " / ".join(qs)))[:110], fill="white", font=font(22))
         for i, (it, p) in enumerate(uniq):
             im = Image.open(p).convert("RGB")
             im.thumbnail((cw, ch))

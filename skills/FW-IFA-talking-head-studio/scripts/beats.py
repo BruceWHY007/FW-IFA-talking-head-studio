@@ -77,15 +77,19 @@ def analyze(proj):
             tags.append("收尾")
         if FIRST.search(t):
             tags.append("第一人称")
-        for c in lex:
-            if any(key in t for key in c["keys"]):
-                obj = c
-                break
-        if obj:
+        # 指代物：地点／实物（能拍到）优先于比喻（借画面）。只有地点／实物才算「这句有东西可拍」（10-30：DeepSeek 按时间空档挑句子、
+        # 再从抽象词推检索词，配出护照、街舞、金属环；Claude 是先认出「真掏钱→钱」「二级市场→中环金融区」再去搜）
+        hits = [c for c in lex if any(key in t for key in c["keys"]) and not any(x in t for x in c.get("not", []))]
+        hits.sort(key=lambda c: (0 if c.get("kind") in ("地点", "实物") else 1, 1 if c.get("weak") else 0))
+        obj = hits[0] if hits else None
+        if obj and obj.get("kind") in ("地点", "实物"):
             tags.append("实物")
+        elif obj:
+            tags.append("比喻")
         gold = [c for c in clauses(t) if 4 <= len(strip(c)) <= 12 and STRONG.search(c) and not NUM.search(c)]
         rows.append({"id": s["id"], "start": round(s["start"], 2), "end": round(s["end"], 2), "text": t, "tags": tags,
                      "nums": nums, "concept": obj["name"] if obj else "", "queries": obj["queries"][:3] if obj else [],
+                     "kind": obj.get("kind", "") if obj else "", "see": obj.get("see", "") if obj else "",
                      "prefer": obj.get("prefer", "") if obj else "", "gold": gold[:1]})
 
     # ---- 成组：序号串（第一…第二…）、列举头＋后面的短句、连续问句 ----
@@ -163,7 +167,10 @@ def analyze(proj):
             sug.append("I compare 对比卡，或把「是」那半句做金银整行")
         if r["concept"] and not sug and r["concept"] != last_c.get("c") or (r["concept"] and not sug and r["start"] - last_c.get("t", -99) > 15):
             last_c.update(c=r["concept"], t=r["start"])
-            sug.append("B-roll：%s（q 例：%s）" % (r["concept"], " / ".join(r["queries"][:2])))
+            if r["kind"] == "比喻":
+                sug.append("（比喻，可选）只有这句就在讲「%s」时才借画面：%s；先考虑卡片或金银整行" % (r["concept"].split("／")[0], r["see"]))
+            else:
+                sug.append("B-roll：应该看到「%s」（q 例：%s）" % (r["see"], " / ".join(r["queries"][:2])))
         if r["gold"] and not sug:
             sug.append("金银整行候选「%s」" % r["gold"][0])
         if "钩子" in tg and not sug:

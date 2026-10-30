@@ -128,9 +128,12 @@ for i, (t0, k, num) in enumerate(sorted(picked), 1):
     busy.add(k); events.append(t0)
     TODO.append("数字卡 G%02d「%s」：补一行 label（这个数是什么，≤12 字）；数字必须过 numcheck" % (i, num))
 
-# ---------- 3. 满幅 B-roll：按片长铺够，长空档放多条；每条盖 1–2 句（3–6 秒），优先有「实物」的句子 ----------
+# ---------- 3. 满幅 B-roll：只配在「有东西可拍」的句子上（beats 标了实物／地点），按片长铺，相邻两条不同题材 ----------
+# 10-30：上一版按「人脸空档的时间中点」挑句子，挑中的多是抽象句（「不在管辖范围里」「信托有没有实质控制」），
+# 自动检索只能配出护照、街舞、金属环、递钥匙。Claude 定稿的 12 条 B-roll 每一条都先认出「这句指的是什么」再搜。
+# 空档里没有能拍的句子就不配 B-roll——那一段靠清单卡、金银整行、插条扛，宁缺毋滥。
 n_b = a.broll if a.broll >= 0 else math.ceil(DUR / 14)
-brolls = []
+brolls, skipped = [], []
 if n_b:
     ev = sorted(set([0.0, DUR] + events))
     gaps = [(x, y) for x, y in zip(ev, ev[1:]) if y - x > 9]
@@ -138,25 +141,29 @@ if n_b:
     for g in sorted(gaps, key=lambda g: g[1] - g[0]):   # 条数超了：从短空档开始减
         while sum(want.values()) > n_b and want[g] > 0:
             want[g] -= 1
+    last_concept = None
     for (x, y), nn in sorted(want.items()):
         span = (y - x) / (nn + 1)
         for j in range(nn):
             mid = x + span * (j + 1)
-            pool = [k for k, r in enumerate(rows) if x + 2 < r["start"] < y - 3 and k not in busy and 1 < k < len(rows) - 2]
+            pool = [k for k, r in enumerate(rows) if x + 1.5 < r["start"] < y - 2.5 and k not in busy and 1 < k < len(rows) - 2
+                    and r["kind"] in ("地点", "实物") and r["concept"] != last_concept]
             if not pool:
-                continue
-            k = min(pool, key=lambda k: abs(rows[k]["start"] - mid) - (3 if rows[k]["concept"] else 0))
+                skipped.append("%d–%d 秒" % (x, y)); continue
+            k = min(pool, key=lambda k: abs(rows[k]["start"] - mid))
             k2 = k
             if k + 1 < len(rows) and k + 1 not in busy and rows[k]["end"] - rows[k]["start"] < 3 and rows[k + 1]["end"] - rows[k]["start"] <= 6.5:
                 k2 = k + 1
             r = rows[k]
-            sh = {"id": "B%02d" % (len(brolls) + 1), "type": "B", "layout": "full",
-                  "cover": r["id"] if k2 == k else "%s–%s" % (r["id"], rows[k2]["id"]),
-                  "why": "「%s」：%s" % (strip(r["text"])[:14], ("画面给%s" % r["concept"]) if r["concept"] else "连续人脸空档里换一次画面（Agent 补一句这条画面指什么）")}
-            if r["queries"]:
-                sh["q"] = list(r["queries"])
-            brolls.append(sh)
-            busy.update({k, k2}); events.append(r["start"])
+            brolls.append({"id": "B%02d" % (len(brolls) + 1), "type": "B", "layout": "full",
+                           "cover": r["id"] if k2 == k else "%s–%s" % (r["id"], rows[k2]["id"]),
+                           "see": r["see"], "q": list(r["queries"]),
+                           "why": "「%s」→ %s" % (strip(r["text"])[:14], r["see"])})
+            busy.update({k, k2}); events.append(r["start"]); last_concept = r["concept"]
+    if brolls:
+        TODO.append("B-roll 的 see（观众应该看到什么）是按词表套的：逐条对着原话改具体（「香港实景」→「中环中银大厦白天外立面」），再按 see 改 q")
+    if skipped:
+        TODO.append("这些空档里没有能拍的句子，没配 B-roll（宁缺毋滥）：%s——靠清单卡／金银整行／插条撑，别硬配泛化画面" % "、".join(sorted(set(skipped))))
 shots += brolls
 
 # ---------- 4. 金银整行：用 beats 的候选，先填「连续人脸 >10 秒没有版面事件」的空档，再凑够门槛 ----------
