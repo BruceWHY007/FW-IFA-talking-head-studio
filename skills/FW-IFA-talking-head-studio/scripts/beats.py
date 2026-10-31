@@ -23,6 +23,135 @@ COMPARE = re.compile(r"不是.{1,14}(而是|是)|而是|相比|高出|低于|比
 STRONG = re.compile(r"不|别|必须|一定|千万|只|就是|才|关键|重点|记住|注意|不是|没有|而是|从来")
 CTA = re.compile(r"关注|评论|私信|留言|点赞|收藏|转发|给你一个动作|最后一句|记住这|拿问题去问")
 FIRST = re.compile(r"我(在|们|做|见|去|当|刚|来|自己|的客户|入行|第一次)")
+# ---- 新形式（references/14）：按内容结构认，不按想不想换花样认 ----
+PCT = re.compile(r"\d+(?:\.\d+)?\s*%|百分之[零〇一二三四五六七八九十百点]+|[一二三四五六七八九两三四]成(?!本|为)|四分之一|一半")
+BEFORE = re.compile(r"以前|过去|原来|原先|曾经|从前|当年|早年|旧办法|老规矩|之前")
+NOW = re.compile(r"现在|如今|今年|眼下|当下|目前|新规|新办法|新规|改成|变成|已经|这几年")
+SEQ = re.compile(r"然后|接着|再|最后|之后|结果|罚完|一查|跟着|紧接着")
+MOVE = re.compile(r"投回|投到|汇|转[出入到]?|出海|回流|返程|汇入|汇出|出境|入境|划到|打到|挪到")
+PLACE = re.compile(r"境内|境外|内地|香港|澳门|新加坡|中东|美国|欧洲|海外|离岸|开曼|BVI|大湾区")
+MERGE = re.compile(r"所以|才|合起来|加起来|叠|这就是|结果|越.{1,6}越")
+UNIT = re.compile(r"[%％‰]|万|亿|港元|元|倍|年|个月|天|人|家|位|岁")
+
+
+def _unit(n):
+    m = UNIT.search(n)
+    return m.group(0) if m else "数"
+
+
+def form_candidates(rows, groups):
+    """把「这句话结构像哪种新形式」列出来（候选，不是命令）。一支片一种形式只当一次主角，见 references/14。"""
+    out = []
+
+    def add(form, ids, why, score):
+        out.append({"form": form, "items": [rows[i]["id"] for i in ids], "why": why, "score": score})
+
+    # 数轴：同一个窗口里两个以上同类数字（同一量纲），能摆在一把尺上
+    nums = [i for i, r in enumerate(rows) if r["nums"]]
+    run = []
+    for i in nums:
+        if run and (rows[i]["start"] - rows[run[0]]["start"] > 45 or
+                    not ({_unit(n) for n in rows[i]["nums"]} & {_unit(n) for n in rows[run[-1]]["nums"]})):
+            if len(run) >= 2:
+                units = "／".join(sorted({_unit(n) for x in run for n in rows[x]["nums"]}))
+                add("scale", run, "%d 个%s数字挤在 %d 秒里，适合放同一把尺比高低" %
+                    (len(run), units, int(rows[run[-1]]["start"] - rows[run[0]]["start"])), 3 + len(run))
+            run = []
+        run.append(i)
+    if len(run) >= 2:
+        units = "／".join(sorted({_unit(n) for x in run for n in rows[x]["nums"]}))
+        add("scale", run, "%d 个%s数字挤在 %d 秒里，适合放同一把尺比高低" %
+            (len(run), units, int(rows[run[-1]]["start"] - rows[run[0]]["start"])), 3 + len(run))
+
+    # 点阵：一句里有一个占比，且这个窗口没有成串数字（成串就给数轴）
+    for i, r in enumerate(rows):
+        if PCT.search(r["text"]):
+            add("dots", [i], "这句在讲一个占比（%s），一百个点亮一部分最直观" % PCT.search(r["text"]).group(0), 2)
+
+    # 前后拉杆：前一句说以前，后一句说现在
+    for i, r in enumerate(rows):
+        if BEFORE.search(r["text"]):
+            for j in range(i + 1, min(i + 4, len(rows))):
+                if rows[j]["start"] - r["start"] > 30:
+                    break
+                if NOW.search(rows[j]["text"]):
+                    add("beforeafter", [i, j], "先「以前」后「现在」，正对上一根前后拉杆", 4)
+                    break
+
+    # 链条：有先后／因果的三层以上（序号串带「然后／最后」，或罚则一层压一层）
+    for g in groups:
+        if g["kind"] != "序号串" or len(g["items"]) < 3:
+            continue
+        ids = g["items"]
+        if any(SEQ.search(rows[i]["text"]) for i in ids) or any(POLICY.search(rows[i]["text"]) for i in ids):
+            add("flow", ids, "%d 个序号句有先后／因果，画成一条链比堆清单清楚" % len(ids), 4 + len(ids))
+
+    # 汇聚：列了三四件事，紧接着给一个结论
+    for g in groups:
+        if g["kind"] != "列举" or len(g["items"]) < 3:
+            continue
+        last = g["items"][-1]
+        for j in range(last + 1, min(last + 5, len(rows))):
+            if rows[j]["start"] - rows[last]["start"] > 25:
+                break
+            if MERGE.search(rows[j]["text"]):
+                add("converge", g["items"] + [j], "%d 件事之后落到「%s」，是典型的多源汇一" %
+                    (len(g["items"]), rows[j]["text"][:12]), 5 + len(g["items"]))
+                break
+
+    # 汇聚兜底：没认成组的短句串＋后面的「所以／才／越…越」结论
+    if not any(c["form"] == "converge" for c in out):
+        for j, r in enumerate(rows):
+            if not MERGE.search(r["text"]):
+                continue
+            back = [i for i in range(max(0, j - 6), j)
+                    if r["start"] - rows[i]["start"] <= 25 and len(strip(rows[i]["text"])) <= 14]
+            if len(back) >= 3:
+                back = back[-4:]   # 汇聚只放 3–4 个来源，多了挤
+                add("converge", back + [j], "%d 句短句之后落到「%s」，像在收口" % (len(back), r["text"][:12]), 3 + len(back))
+                break
+
+    # 航线：两个以上地点＋位移动词，讲的是钱／人怎么走
+    for i, r in enumerate(rows):
+        if not PLACE.search(r["text"]):
+            continue
+        win = [i] + [j for j in range(i + 1, len(rows)) if rows[j]["start"] - r["start"] <= 60]
+        places = {m.group(0) for j in win for m in [PLACE.search(rows[j]["text"])] if m}
+        if len(places) >= 2 and any(MOVE.search(rows[j]["text"]) for j in win):
+            add("route", win[:6], "讲到%s，还有走的动作，适合画一条航线" % "／".join(sorted(places)), 4 + len(places))
+
+    out.sort(key=lambda c: -c["score"])
+    for k, c in enumerate(out):
+        c["lead"] = k == 0
+    # 同一种形式只留分最高的一个（一支片一次主角）
+    seen, keep = set(), []
+    for c in out:
+        if c["form"] in seen:
+            continue
+        seen.add(c["form"])
+        keep.append(c)
+    return keep[:3]
+
+
+def registry_note(proj):
+    """同账号连着两支，形式要错开：读工程上一级的账号登记（make.py 写）。"""
+    import os
+    regp = os.path.join(os.path.dirname(os.path.abspath(proj)), "_口播形式登记.json")
+    if not os.path.exists(regp):
+        return ""
+    try:
+        reg = load(regp)
+    except Exception:
+        return ""
+    forms = ("scale", "dots", "beforeafter", "flow", "converge", "route")
+    recent = []
+    for e in reg.get("entries", [])[-4:]:
+        used = [c for c in e.get("cards", []) if c in forms]
+        if used:
+            recent.append("%s（%s）用 %s" % (e.get("project", "?"), e.get("time", "")[:10], "／".join(used)))
+    if not recent:
+        return ""
+    return "上一级账号登记里最近用过：" + "；".join(recent) + "。★ 同账号连着两支尽量换一种；确实只有一种对，就在交付里写理由。"
 
 
 CNN = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -182,13 +311,15 @@ def analyze(proj):
         if not sug:
             sug.append("留脸；连续人脸 >12 秒时这里可放插条 inserts／金银整行")
         r["suggest"] = sug
+    forms = form_candidates(rows, groups)
     # ---- 完整版硬检查预告（和 build.py 7.9 同一套门槛）----
     mins = dur / 60.0
     n_ord = sum(1 for r in rows if "序号" in r["tags"])
     need = {"gold": max(3, round(mins * 1.5)), "texts": max(2, round(mins * 1.2)), "layouts": 4 if dur >= 90 else 3,
             "inserts": 1 if dur >= 60 else 0, "info": 1, "tracker": 1 if n_ord >= 3 else 0,
             "doc": 1 if any("政策" in r["tags"] for r in rows) else 0, "face": "40–78%"}
-    return {"duration": round(dur, 2), "rows": rows, "groups": groups, "need": need}
+    return {"duration": round(dur, 2), "rows": rows, "groups": groups, "need": need,
+            "forms": forms, "form_registry": registry_note(proj)}
 
 
 def write(proj, res):
@@ -212,6 +343,14 @@ def write(proj, res):
         ids = [rows[i]["id"] for i in g["items"]]
         head = ("头句 %s「%s」，" % (rows[g["head"]]["id"], rows[g["head"]]["text"][:20])) if "head" in g else ""
         L.append("- **%s** %s条目 %s：%s" % (g["kind"], head, "、".join(ids), "／".join(strip(rows[i]["text"])[:10] for i in g["items"])))
+    L += ["", "## 形式候选（references/14；只是候选，一种形式一支片只当一次主角）", ""]
+    if res.get("form_registry"):
+        L += ["> " + res["form_registry"], ""]
+    if not res.get("forms"):
+        L.append("（没认出六种新形式的结构：照原来的 compare／list／timeline／chart／quote 和屏上字做）")
+    for c in res.get("forms", []):
+        L.append("- %s **%s** 句 %s：%s%s" % ("★主角" if c["lead"] else "备选", c["form"], "、".join(c["items"]), c["why"],
+                                                "（字段写法见 references/14 §二）"))
     L += ["", "## 逐句", "", "| 句号 | 时间 | 原话 | 标签 | 建议处理 |", "|---|---|---|---|---|"]
     for r in rows:
         L.append("| %s | %d:%04.1f | %s | %s | %s |" % (r["id"], r["start"] // 60, r["start"] % 60, r["text"].replace("|", "｜"),
@@ -233,4 +372,6 @@ if __name__ == "__main__":
     print("✓ work/beats.md：%d 句，%s" % (len(res["rows"]), "、".join("%s %d" % kv for kv in tagc.items())))
     for g in res["groups"]:
         print("  · %s：%s" % (g["kind"], "、".join(res["rows"][i]["id"] for i in g["items"])))
+    for c in res.get("forms", []):
+        print("  · 形式%s：%s ← %s" % ("★" if c["lead"] else "备选", c["form"], "、".join(c["items"])))
     print("  完整版至少：金银整行 %(gold)s、屏上字 %(texts)s、画面处理 %(layouts)s 种、插条 %(inserts)s、信息卡 %(info)s、进度坞 %(tracker)s、原文页 %(doc)s，人脸 %(face)s" % res["need"])

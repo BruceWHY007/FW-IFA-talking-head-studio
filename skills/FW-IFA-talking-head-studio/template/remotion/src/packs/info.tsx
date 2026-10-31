@@ -7,6 +7,7 @@ import {OffthreadVideo, interpolate, staticFile} from 'remotion';
 import {Rect, Shot, clamp, prog, wipe, faceFit} from './common';
 import {emW, fitSize} from './parts';
 import {F, ease} from '../theme';
+import {FormCore, FORM_KINDS, Icon} from './forms';
 
 export type Presenter = {mode: 'blur' | 'box' | 'pip' | 'polaroid'; rect?: Rect; radius?: number; border?: string; topBar?: string};
 export type InfoStyle = {
@@ -67,6 +68,19 @@ const PresenterBox: React.FC<{st: InfoStyle; face: {cx: number; cy: number}; src
       <OffthreadVideo src={staticFile(src)} muted style={{position: 'absolute', left: ff.left, top: ff.top, width: ff.width, height: ff.height, maxWidth: 'none'}} />
       {pr.topBar ? <div style={{position: 'absolute', left: 0, top: 0, right: 0, height: 6, background: pr.topBar}} /> : null}
     </div>
+  );
+};
+
+const ListMark: React.FC<{it: any; mark?: string; x: number; y: number; size: number; color: string; on: boolean; f: number; at: number}> = ({it, mark, x, y, size, color, on, f, at}) => {
+  if (it.icon) return <Icon name={it.icon} x={x} y={y} size={size} color={color} opacity={on ? 1 : 0.55} clip={`inset(0 0 ${appear(f, at, 6)}% 0)`} />;
+  const p = prog(f - at, 0, 9);
+  const d = mark === 'check' ? 'M4,13 L10,19 L21,6' : mark === 'cross' ? 'M5,5 L19,19 M19,5 L5,19' : '';
+  if (mark === 'q') return <div style={{position: 'absolute', left: x + size * 0.1, top: y - size * 0.3, fontFamily: F.didot, fontWeight: 700, fontSize: size * 1.55, lineHeight: 1, color, opacity: on ? 1 : 0.55,
+    clipPath: `inset(0 0 ${appear(f, at, 6)}% 0)`}}>?</div>;
+  return (
+    <svg viewBox="0 0 24 24" style={{position: 'absolute', left: x, top: y, width: size, height: size, overflow: 'visible', opacity: on ? 1 : 0.55}}>
+      <path d={d} pathLength={1} fill="none" stroke={color} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1 1" strokeDashoffset={1 - p} />
+    </svg>
   );
 };
 
@@ -179,8 +193,12 @@ export const InfoCore: React.FC<{f: number; s: Shot; st: InfoStyle; face: {cx: n
           {tl
             ? <div style={{position: 'absolute', left: 10, top: 18, width: 27, height: 27, borderRadius: 27, background: on ? st.accent : st.card,
                 border: `3px solid ${on ? st.accent : st.mute}`, boxSizing: 'border-box'}} />
-            : <div style={{position: 'absolute', left: st.pad - 6 + (i % 2) * 18, top: 10, fontFamily: st.numFont, fontWeight: st.numWeight, fontSize: Math.round(tMax * 1.5), lineHeight: 1,
+            : it.icon || ['check', 'cross', 'q'].includes(info.mark)
+              ? <ListMark it={it} mark={info.mark} x={st.pad - 6 + (i % 2) * 18} y={14} size={Math.round(tMax * 1.25)} color={st.accent} on={on} f={f} at={at} />
+              : <div style={{position: 'absolute', left: st.pad - 6 + (i % 2) * 18, top: 10, fontFamily: st.numFont, fontWeight: st.numWeight, fontSize: Math.round(tMax * 1.5), lineHeight: 1,
                 color: st.accent, opacity: on ? 1 : 0.5}}>{it.n ?? String(i + 1)}</div>}
+          {info.mark === 'cross' && !tl ? <div style={{position: 'absolute', left: tx - A.x + (i % 2) * 18 - 6, top: 22 + tMax * 0.62, height: 4, borderRadius: 2, background: st.accent,
+            width: (emW(String(it.t || '')) * fitSize(it.t || '', A.w - (tx - A.x) - 40, tMax, 38) + 12) * prog(f - at, 10, 20), opacity: 0.85}} /> : null}
           <div style={{position: 'absolute', left: tx - A.x + (tl ? 0 : (i % 2) * 18), top: tl ? 6 : 22, opacity: dim}}>
             {tl && it.when ? <div style={{fontFamily: st.numFont, fontWeight: st.numWeight, fontSize: dSz + 4, color: on ? st.accent : st.mute, whiteSpace: 'nowrap'}}>{it.when}</div> : null}
             <div style={{marginTop: tl ? 4 : 0, fontFamily: st.titleFont, fontWeight: st.titleWeight, fontSize: fitSize(it.t || it.what || '', A.w - (tx - A.x) - 40, tMax, 38),
@@ -249,6 +267,8 @@ export const InfoCore: React.FC<{f: number; s: Shot; st: InfoStyle; face: {cx: n
     );
     kids.push(<Source key="s" st={st} text={info.source} x={A.x} y={A.y + A.h - 30} w={A.w} f={f} at={t0 + 14} />);
   }
+
+  if (FORM_KINDS.includes(info.kind)) kids.push(<FormCore key="form" f={f} s={s} st={st} t0={t0} />);
 
   const Bg = st.WindowBg;
   const card = big && info.kind !== 'quote' && st.Surface ? (

@@ -251,7 +251,8 @@ def info_need(s):
     if kind == "quote":
         n_ch = len(str(info.get("text", "")))
         return ts, s["t0"] + max(2.0, n_ch / 8 + 0.6)
-    hold = {"list": 1.2, "timeline": 1.2, "compare": 1.4, "chart": 1.9}.get(kind, 1.3)
+    hold = {"list": 1.2, "timeline": 1.2, "compare": 1.4, "chart": 1.9, "scale": 1.6, "dots": 1.8, "beforeafter": 1.8, "flow": 1.4,
+            "converge": 1.8, "route": 1.8}.get(kind, 1.3)
     return ts, last + hold
 
 # 大字卡／信息卡：字落下后至少完整可读一段时间，出点延到那之后的第一个开口帧（10-22 评审第 3 轮：量在屏时长会骗人）
@@ -426,14 +427,24 @@ F_MAIN = {"bands3": (1080, 650), "glowband": (1080, 1200)}   # glowband 接缝 1
 F_LAYOUTS = ("full", "band", "bands3", "pip", "glow", "glowband", "ring", "doc")
 
 # 信息卡输出：锚点→帧号；quote 的重点词→字符区间；按卡型查字数（装不下就报，不缩字号、不截断）
-LIMITS = {"quote": [("text", 44)], "compare": [("title", 16)], "list": [("title", 16)], "timeline": [("title", 16)], "chart": [("title", 18)]}
+LIMITS = {"quote": [("text", 44)], "compare": [("title", 16)], "list": [("title", 16)], "timeline": [("title", 16)], "chart": [("title", 18)],
+          "scale": [("title", 16)], "dots": [("title", 16), ("show", 6), ("label", 28)], "beforeafter": [("title", 16)], "flow": [("title", 16)],
+          "converge": [("title", 16)], "route": [("title", 16)]}
 ITEM_LIM = {"compare": {"label": 6, "value": 7, "unit": 6, "note": 16}, "list": {"t": 9, "d": 16}, "timeline": {"when": 8, "what": 12},
-            "chart": {"label": 8}}
+            "chart": {"label": 8}, "scale": {"label": 10, "show": 8}, "beforeafter": {"tag": 6, "t": 14, "d": 28}, "flow": {"t": 10, "d": 16},
+            "converge": {"t": 7, "d": 16}, "route": {"t": 6, "d": 12}}
+FORM_KINDS = ("scale", "dots", "beforeafter", "flow", "converge", "route")   # 10-31 按内容结构换形式（packs/forms.tsx）
 def info_out(s):
     info = json.loads(json.dumps(s["info"]))
     kind = info.get("kind")
-    if kind not in ("quote", "compare", "list", "timeline", "chart"):
-        die("信息卡 %s 的 kind 只能是 quote／compare／list／timeline／chart，写的是 %s" % (s["id"], kind))
+    if kind not in ("quote", "compare", "list", "timeline", "chart") + FORM_KINDS:
+        die("信息卡 %s 的 kind 只能是 quote／compare／list／timeline／chart／scale／dots／beforeafter／flow／converge／route，写的是 %s（各自写法见 references/14）" % (s["id"], kind))
+    if kind == "scale" and not all(isinstance(it, dict) and isinstance(it.get("v"), (int, float)) for it in info.get("items", [])):
+        die("信息卡 %s（数轴 scale）：每个条目要有数值 v（数字，用来定位置），屏上显示的写 show" % s["id"])
+    if kind == "dots" and not (0 < float(info.get("value", 0)) <= 1):
+        die("信息卡 %s（点阵 dots）：value 写 0–1 之间的占比（前四分之一＝0.25、两成＝0.2）" % s["id"])
+    if kind == "beforeafter" and len(info.get("items", [])) != 2:
+        die("信息卡 %s（前后拉杆 beforeafter）：items 正好两条——[以前, 现在]，现在那条的 at 是拉杆扫过的时刻" % s["id"])
     ts, _ = info_need(s)
     for it, t in zip(info.get("items") or info.get("groups") or [], ts):
         if isinstance(it, dict):
@@ -455,7 +466,7 @@ def info_out(s):
             r_ = find(info["hl_at"], s["i0"])
             if r_:
                 info["hlAt"] = int(round(chars[r_[0]]["s"] * FPS))
-    if kind in ("compare", "chart", "quote") and not info.get("source"):
+    if kind in ("compare", "chart", "quote", "scale", "dots") and not info.get("source"):
         warn.append("信息卡 %s（%s）没有来源行：数据和原文必须写 source（她自己的话就写「口述」）" % (s["id"], kind))
     if kind == "chart":
         for g in info.get("groups", []):
@@ -653,6 +664,25 @@ for k, s in enumerate(shots):
             o["iw"], o["ih"] = im.size
         o["image"] = "img/" + os.path.basename(dst)
     out_shots.append(o)
+
+# ---------- 4.9 新形式的纪律（10-31，references/14 §四）----------
+# 一种形式一支片只当一次主角：同一 kind 出现两次以上、或全片用三种以上新形式，都是模板感的前兆。
+fk = [k for k in ((o.get("info") or {}).get("kind") for o in out_shots if o["type"] == "I") if k in FORM_KINDS]
+if fk:
+    cnt = {}
+    for k in fk:
+        cnt[k] = cnt.get(k, 0) + 1
+    for k, n in cnt.items():
+        if n >= 2:
+            warn.append("新形式 %s 用了 %d 次：一种形式一支片只当一次主角，第二次换成 list／compare（references/14 §四）" % (k, n))
+    if len(cnt) >= 3:
+        warn.append("一支片用了 %d 种新形式（%s）：留最贴内容的一到两种（references/14 §四）" % (len(cnt), "／".join(cnt)))
+    if LAST:
+        prev = [c for c in LAST.get("cards", []) if c in FORM_KINDS]
+        dup = [k for k in cnt if k in prev]
+        if dup:
+            warn.append("同账号上一支（%s）已经用过 %s：连着两支尽量换一种；确实只有这一种对，交付时写理由（references/14 §四）"
+                        % (LAST.get("project", "上一支"), "／".join(dup)))
 
 # ---------- 5. 刊头、名字条、封面、下期预告（字幕要避让它们，所以先算） ----------
 ttl = dec.get("title", {})
