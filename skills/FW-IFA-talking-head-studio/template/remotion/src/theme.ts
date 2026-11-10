@@ -22,8 +22,9 @@ export const C = {
 export const plate = (a = 0.62) => `rgba(13,18,22,${a})`;
 
 export const F = {
-  serif: '"SHSerif", "Songti SC", serif',
-  sans: '"PingFang SC", "Hiragino Sans GB", sans-serif',
+  // 宋体与数字体随包（编进代码包），三个系统一样；黑体用系统的：macOS 苹方／Windows 微软雅黑／Linux Noto Sans CJK
+  serif: '"SHSerif", "Songti SC", "Noto Serif CJK SC", "SimSun", serif',
+  sans: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", sans-serif',
   didot: '"Bodoni Moda", "Didot", serif',
 };
 

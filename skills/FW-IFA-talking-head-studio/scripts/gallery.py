@@ -68,7 +68,7 @@ for wt in ("Heavy", "SemiBold"):
          "--layout-features=*", "--no-hinting"])
 fd = {k: base64.b64encode(open(P(R, "public", "fonts", f), "rb").read()).decode()
       for k, f in [("SHSerif-Heavy", "SHSerif-Heavy.otf"), ("SHSerif-SemiBold", "SHSerif-SemiBold.otf"), ("BodoniModa", "BodoniModa.ttf")]}
-open(P(R, "src", "fontdata.ts"), "w").write("export const FONT_DATA: Record<string, string> = " + json.dumps(fd) + ";\n")
+open(P(R, "src", "fontdata.ts"), "w", encoding="utf-8").write("export const FONT_DATA: Record<string, string> = " + json.dumps(fd) + ";\n")
 
 outdir = P(proj, "out", "风格目录")
 os.makedirs(outdir, exist_ok=True)

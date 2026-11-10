@@ -13,11 +13,11 @@
 """
 import argparse, glob, json, os, re, sys, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, run, probe, save, load, die, has, encoder_args, read_audio_mono, energy_db, hms, font
+from kb import P, run, probe, save, load, die, has, encoder_args, read_audio_mono, energy_db, hms, font, whisper_model, cpu_threads, PY, SKILL, t2s
 
 ap = argparse.ArgumentParser()
 ap.add_argument("proj")
-ap.add_argument("--model", default=os.environ.get("WHISPER_MODEL", os.path.expanduser("~/.cache/whisper-cpp/ggml-small.bin")))
+ap.add_argument("--model", default=whisper_model())
 ap.add_argument("--prompt", default="")
 ap.add_argument("--crop-x", type=float, default=None, help="横版源裁竖版时的主体水平中心（0–1），缺省按人脸")
 a = ap.parse_args()
@@ -62,15 +62,16 @@ print("✓ A-roll %dx%d 30fps %.2fs" % (tw, th, dur))
 # ---------- 2. 转写（whisper-cli，逐 token 毫秒偏移） ----------
 asr = P(proj, "work", "asr_full.json")
 if not os.path.exists(asr):
+    _setup = "%s %s" % (os.path.basename(PY), os.path.join(SKILL, "scripts", "setup.py"))
     if not has("whisper-cli"):
-        die("没有 whisper-cli（brew install whisper-cpp），或把逐字 SRT 放到 work/asr.srt 再改本脚本走 --srt")
+        die("没有转写程序 whisper-cli：跑 %s（会按系统装好；macOS 也可以 brew install whisper-cpp）" % _setup)
     if not os.path.exists(a.model):
-        die("缺 whisper 模型 %s（ggml-small 约 466MB，下载要限时并告知用户）" % a.model)
+        die("缺转写模型 %s：跑 %s（走国内镜像下载，约 190MB，有超时）；已有别的 ggml 模型就设环境变量 WHISPER_MODEL" % (a.model, _setup))
     wav16 = P(proj, "work", "a16.wav")
     run(["ffmpeg", "-v", "error", "-y", "-i", out_a, "-ac", "1", "-ar", "16000", wav16])
     prompt = "以下是普通话的句子，使用简体中文。" + a.prompt
     run(["whisper-cli", "-m", a.model, "-l", "zh", "-f", wav16, "-ojf", "-of", asr[:-5],
-         "--prompt", prompt, "-t", "8", "-mc", "0"])
+         "--prompt", prompt, "-t", str(cpu_threads()), "-mc", "0"])
 d = json.loads(open(asr, "rb").read().decode("utf-8", "replace"))
 
 PUNCT = "，。！？、；：,.!?;:"
@@ -83,7 +84,7 @@ for si, seg in enumerate(d.get("transcription", [])):
         if txt.startswith("[_") or not txt.strip():
             continue
         s, e = t["offsets"]["from"] / 1000.0, t["offsets"]["to"] / 1000.0
-        cs = [c for c in txt if c.strip() and c != "�"]
+        cs = [c for c in t2s(txt) if c.strip() and c != "�"]   # 繁体统一转简体（一对一，不动时间）
         if not cs:
             continue
         step = (e - s) / max(len(cs), 1)
@@ -157,7 +158,8 @@ for cs in sents:
         ch["s"] = round(s1 + (ch["s"] - s0) * k, 3)
         ch["e"] = round(s1 + (ch["e"] - s0) * k, 3)
         ch.pop("seg", None)
-tr = {"_说明": "只改 text（校对错字、人名、术语、数字口径）；raw_text 和 chars 是对齐用的，别动。"
+tr = {"_pid": load(P(proj, "project.json"), {}).get("pid", ""),
+      "_说明": "只改 text（校对错字、人名、术语、数字口径）；raw_text 和 chars 是对齐用的，别动。"
                "要删的整句（重说、废句）写 \"drop\": true；要剪掉的口癖在 edits.json 里写。",
       "sentences": []}
 for k, cs in enumerate(sents):

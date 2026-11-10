@@ -12,7 +12,7 @@
 """
 import argparse, json, os, subprocess, sys, shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, SKILL, run, probe, save, die
+from kb import P, SKILL, run, probe, save, die, link_dir, detect_faces, encoder_args
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--video", default="", help="用户给的原片；给了才渲目录")
@@ -88,8 +88,9 @@ os.makedirs(P(proj, "work"), exist_ok=True)
 shutil.copytree(os.path.join(SKILL, "template", "remotion"), R, ignore=shutil.ignore_patterns("node_modules", "out"))
 nm = os.path.join(SKILL, "runtime", "node_modules")
 if not os.path.exists(nm):
-    die("共享运行时还没装：bash scripts/setup.sh")
-os.symlink(nm, P(R, "node_modules"))
+    die("共享运行时还没装：先跑 scripts/setup.py")
+if not link_dir(nm, P(R, "node_modules")):
+    die("建不了 node_modules 的链接：%s" % P(R, "node_modules"))
 os.makedirs(P(R, "public", "clips"), exist_ok=True)
 # 字体：gallery.py 要用 public/fonts 里的三支字体做子集（模板里只有 brand/logo.png）
 os.makedirs(P(R, "public", "fonts"), exist_ok=True)
@@ -109,7 +110,7 @@ else:
     vf += ["crop=ih*9/16:ih:(iw-ih*9/16)*0.5:0", "scale=1080:1920"]
 vf.append("fps=30")
 run(["ffmpeg", "-v", "error", "-y", "-i", raw, "-t", "%.2f" % min(a.seconds, info["duration"]), "-vf", ",".join(vf),
-     "-c:v", "h264_videotoolbox", "-b:v", "12M", "-an", "-movflags", "+faststart", aout])
+     ] + encoder_args("high") + ["-an", "-movflags", "+faststart", aout])
 dur = probe(aout)["duration"]
 print("· 样片 A-roll %.1fs 1080×1920" % dur)
 
@@ -120,19 +121,13 @@ os.makedirs(fd, exist_ok=True)
 for i in range(6):
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.2f" % (dur * (i + 0.5) / 6), "-i", aout, "-frames:v", "1",
                     os.path.join(fd, "f%02d.jpg" % i)], capture_output=True)
-face_bin = os.path.expanduser("~/.cache/ifa-koubo/face")
-if not os.path.exists(face_bin):
-    subprocess.run(["swiftc", "-O", os.path.join(SKILL, "scripts", "face.swift"), "-o", face_bin], capture_output=True)
-if os.path.exists(face_bin) and not a.placeholder:
-    try:
-        got = json.loads(subprocess.run([face_bin, fd], capture_output=True, text=True).stdout or "{}")
-        faces = [f for v_ in got.values() for f in v_ if f.get("conf", 0) > 0.5 and f.get("w", 0) > 0.12]
-        if faces:
-            big = max(faces, key=lambda f: f["w"])
-            face = {"cx": round(big["x"] + big["w"] / 2, 3), "cy": round(big["y"] + big["h"] / 2, 3)}
-            print("· 人脸中心 %.2f / %.2f（脸宽 %.0f%%）" % (face["cx"], face["cy"], big["w"] * 100))
-    except Exception:
-        pass
+if not a.placeholder:
+    got, _how = detect_faces(fd)
+    faces = [f for v_ in (got or {}).values() for f in v_ if f.get("conf", 0) > 0.5 and f.get("w", 0) > 0.12]
+    if faces:
+        big = max(faces, key=lambda f: f["w"])
+        face = {"cx": round(big["x"] + big["w"] / 2, 3), "cy": round(big["y"] + big["h"] / 2, 3)}
+        print("· 人脸中心 %.2f / %.2f（脸宽 %.0f%%）" % (face["cx"], face["cy"], big["w"] * 100))
 
 # ---------- 4. 最小时间线（gallery.py 只要 aroll）----------
 save(P(R, "src", "timeline.json"), {"fps": 30, "width": 1080, "height": 1920, "durationInFrames": max(int(dur * 30), 240),

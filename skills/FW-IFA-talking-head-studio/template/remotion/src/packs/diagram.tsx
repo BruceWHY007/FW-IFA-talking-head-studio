@@ -22,7 +22,7 @@ const FOOTER = String((tlRaw as any).footer || 'paper') as 'plate' | 'paper';
 const COL_Y = FOOTER === 'paper' ? 1812 : 1712;
 const BAR_Y = FOOTER === 'paper' ? 1902 : FOOT - 2;
 const HELV = '"Helvetica Neue", Helvetica, Arial, sans-serif';
-const MONO = '"SF Mono", Menlo, monospace';
+const MONO = '"SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace';
 
 const GRID: React.CSSProperties = {backgroundImage: `linear-gradient(90deg, ${K.line} 1px, transparent 1px)`, backgroundSize: '90px 100%'};
 const Under: React.FC = () => (

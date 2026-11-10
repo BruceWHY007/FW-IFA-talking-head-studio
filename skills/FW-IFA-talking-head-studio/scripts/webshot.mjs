@@ -15,7 +15,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(path.join(here, '..', 'runtime', 'package.json'));
 let chromium;
 try { ({chromium} = require('playwright-core')); } catch (e) {
-  console.error('✗ 缺 playwright-core：cd <skill>/runtime && npm install --registry=https://registry.npmjs.org/（setup.sh 会装）');
+  console.error('✗ 缺 playwright-core：先跑 scripts/setup.py（会装共享运行时）');
   process.exit(2);
 }
 
@@ -29,17 +29,25 @@ if (!args.url || !args.out) {
 }
 const width = Number(args.width || 900), scale = Number(args.scale || 2), cropH = Number(args.height || 2400);
 
-// 浏览器：环境变量 CHROME_PATH → 本机 Chrome → Playwright 缓存里的 Chrome for Testing（都不用联网下载）
-const home = process.env.HOME || '';
-const cands = [process.env.CHROME_PATH, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'];
-const pw = path.join(home, 'Library/Caches/ms-playwright');
-if (fs.existsSync(pw)) for (const d of fs.readdirSync(pw).filter((x) => x.startsWith('chromium-')).sort().reverse()) {
-  cands.push(path.join(pw, d, 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'));
-  cands.push(path.join(pw, d, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'));
-  cands.push(path.join(pw, d, 'chrome-linux/chrome'));
+// 浏览器：环境变量 CHROME_PATH → 本机 Chrome／Edge → Playwright 缓存里的 Chrome for Testing（都不用联网下载）
+const home = process.env.HOME || process.env.USERPROFILE || '';
+const pf = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean);
+const cands = [process.env.CHROME_PATH, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ...pf.map((d) => path.join(d, 'Google/Chrome/Application/chrome.exe')),      // Windows：Chrome
+  ...pf.map((d) => path.join(d, 'Microsoft/Edge/Application/msedge.exe')),     // Windows：Edge（系统自带）
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/microsoft-edge'];
+for (const pw of [path.join(home, 'Library/Caches/ms-playwright'), path.join(home, 'AppData/Local/ms-playwright'), path.join(home, '.cache/ms-playwright')]) {
+  if (!fs.existsSync(pw)) continue;
+  for (const d of fs.readdirSync(pw).filter((x) => x.startsWith('chromium-')).sort().reverse()) {
+    cands.push(path.join(pw, d, 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'));
+    cands.push(path.join(pw, d, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'));
+    cands.push(path.join(pw, d, 'chrome-linux/chrome'));
+    cands.push(path.join(pw, d, 'chrome-win/chrome.exe'));
+  }
 }
 const exe = cands.find((p) => p && fs.existsSync(p));
-if (!exe) { console.error('✗ 找不到 Chrome：装 Google Chrome，或设 CHROME_PATH'); process.exit(2); }
+if (!exe) { console.error('✗ 找不到 Chrome／Edge：装一个，或设环境变量 CHROME_PATH 指向浏览器程序'); process.exit(2); }
 
 const browser = await chromium.launch({executablePath: exe, headless: true, args: ['--hide-scrollbars']});
 const ctx = await browser.newContext({viewport: {width, height: 1600}, deviceScaleFactor: scale, locale: 'zh-CN',

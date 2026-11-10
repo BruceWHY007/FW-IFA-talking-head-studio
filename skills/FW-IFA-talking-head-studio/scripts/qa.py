@@ -11,7 +11,7 @@
 """
 import argparse, json, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, run, load, save, probe, read_gray_frames, hms, font
+from kb import P, run, load, save, probe, read_gray_frames, hms, font, vision_bin
 import numpy as np
 
 ap = argparse.ArgumentParser()
@@ -478,13 +478,8 @@ add("B-roll 亮度下限", not dark_bad, "；".join(dark_bad) or "0", "每条 �
 # 8d-2 B-roll 里有没有可读文字（10-27：1941 年华盛顿首日封「WASHINGTON JUN 25 1941」满屏可读，自动验收全过）
 # macOS Vision OCR，只报 ≥4 个字且置信度 ≥0.5 的块；镜头写 text_ok: true 可豁免（例如招牌本来就要露）
 txt_bad, txt_skip = [], []
-text_bin = os.path.expanduser("~/.cache/ifa-koubo/text")
-if not os.path.exists(text_bin):
-    # 首次跑 qa 时顺手编译（setup.sh 也会编；非 macOS 没有 swiftc，编译失败就跳过这一项）
-    os.makedirs(os.path.dirname(text_bin), exist_ok=True)
-    _sk = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    subprocess.run(["swiftc", "-O", os.path.join(_sk, "scripts", "text.swift"), "-o", text_bin], capture_output=True)
-if os.path.exists(text_bin):
+text_bin = vision_bin("text")   # 只有 macOS 有（Vision）；其他系统这一项跳过，在报告里写明要人看
+if text_bin:
     import tempfile
     tmpd = tempfile.mkdtemp(prefix="qa_ocr_")
     jobs = []
@@ -524,7 +519,7 @@ if os.path.exists(text_bin):
     add("B-roll 可读文字", None if txt_bad else True, "；".join(txt_bad) or ("0" + ("（豁免 %s）" % "、".join(txt_skip) if txt_skip else "")),
         "画面里的字要和屏上的事实一致：报了就去核，确认是本意就在 decompose 该镜写 text_ok: true")
 else:
-    add("B-roll 可读文字", None, "跳过：没有 Vision OCR（非 macOS 或编译失败）", "macOS 上跑 setup.sh 会编译 scripts/text.swift")
+    add("B-roll 可读文字", None, "跳过：这台机器没有文字识别（只有 macOS 有）", "人看一遍 out/抽帧_每秒2帧.jpg：B-roll 里有没有和事实不符的可读文字、外文招牌")
 
 
 # 8e 片尾杂音：最后一个字之后人声轨不应再有瞬态（第 3、4 轮评审：她伸手点停止键的「咔」）

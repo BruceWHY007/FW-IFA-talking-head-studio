@@ -324,7 +324,7 @@ def analyze(proj):
 
 def write(proj, res):
     out = P(proj, "work", "beats.json")
-    json.dump(res, open(out, "w"), ensure_ascii=False, indent=1)
+    json.dump(res, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     rows, groups, need = res["rows"], res["groups"], res["need"]
     L = ["# 逐句节拍表（beats.py 自动生成：只是候选，内容决定最后用什么）", "",
          "锚点直接写句号：`\"cover\": \"s17\"` 或 `\"s16–s19\"`；`texts`／`tracker` 的 `at` 也可以写句号。", "",
@@ -355,7 +355,7 @@ def write(proj, res):
     for r in rows:
         L.append("| %s | %d:%04.1f | %s | %s | %s |" % (r["id"], r["start"] // 60, r["start"] % 60, r["text"].replace("|", "｜"),
                                                     "、".join(r["tags"]) or "—", "；".join(r["suggest"])))
-    open(P(proj, "work", "beats.md"), "w").write("\n".join(L) + "\n")
+    open(P(proj, "work", "beats.md"), "w", encoding="utf-8").write("\n".join(L) + "\n")
     return out
 
 

@@ -13,7 +13,7 @@
 """
 import argparse, difflib, glob, json, os, re, shutil, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, SKILL, run, load, save, die, read_gray_frames, font, hms
+from kb import P, SKILL, run, load, save, die, read_gray_frames, font, hms, detect_faces
 import numpy as np
 
 ap = argparse.ArgumentParser()
@@ -33,14 +33,7 @@ def fillers(t):
     hits += [w for w in FILLER_ANY if w in t]
     return hits
 
-# ---------- 人脸检测（macOS Vision） ----------
-face_bin = os.path.expanduser("~/.cache/ifa-koubo/face")
-if not os.path.exists(face_bin):
-    os.makedirs(os.path.dirname(face_bin), exist_ok=True)
-    r = subprocess.run(["swiftc", "-O", os.path.join(SKILL, "scripts", "face.swift"), "-o", face_bin],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        print("⚠ Vision 人脸检测编译失败，跳过人脸项：", r.stderr[-300:])
+# ---------- 人脸检测（macOS 用 Vision；其他系统用 OpenCV；都没有就标「未知」，不当成无脸） ----------
 fd = P(proj, "work", "_fa")
 shutil.rmtree(fd, ignore_errors=True)
 os.makedirs(fd)
@@ -49,9 +42,11 @@ for k, s in enumerate(S):
         t = s["start"] + (s["end"] - s["start"]) * fr_
         run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % t, "-i", src, "-frames:v", "1",
              "-vf", "scale=540:-2", P(fd, "%03d_%d.jpg" % (k, j))])
-faces = {}
-if os.path.exists(face_bin):
-    faces = json.loads(subprocess.run([face_bin, fd], capture_output=True, text=True).stdout or "{}")
+faces, FACE_HOW = detect_faces(fd)
+if faces is None:
+    faces = {}
+    print("⚠ 这台机器没有人脸检测（macOS 自带；Windows／Linux 装 opencv-python-headless 就有）："
+          "人脸项记为「未知」，判定时自己看 work/aroll_sheet.jpg；人脸中心用默认值，需要时在 project.json 写 face: {cx, cy, w}")
 
 # ---------- 清晰度：人脸框（没有就画面中上部）的拉普拉斯方差 ----------
 from PIL import Image
@@ -102,7 +97,7 @@ ge = [r["gesture"] for r in rows]
 ge_hi = float(np.percentile(ge, 70)) if ge else 0
 for r in rows:
     why = []
-    if r["face_seen"] == 0:
+    if r["face_seen"] == 0 and FACE_HOW:
         why.append("无脸")
     elif r["yaw"] is not None and r["yaw"] > 0.35:
         why.append("侧脸")

@@ -5,12 +5,11 @@ description: 把一条真人口播原片（手机或相机拍的对镜头讲话�
 
 # FW-IFA 口播成片 · talking-head-studio
 
-> 一条真人对镜头讲话的原片，做成有设计感的竖版成片。装完目录 `~/.agents/skills/FW-IFA-talking-head-studio`。
-
 > **任何模型执行之前，先读 `references/00_执行卡.md`（一页：每步命令、必须看的东西、过不去的条件、禁止事项）。** 照它走，不要只读这一页开头就开工。
+> **不知道下一步做什么，就跑 `python scripts/next.py <工程目录>`**：它看工程里的文件判断做到哪一步，只告诉你下一步的命令、必须看的东西、过不去的条件。顺序以它为准，不凭记忆排。
+> **第一次装（macOS／Windows／Linux 同一条命令）**：`python scripts/setup.py`，最后一行是 `[setup] OK` 才算好；随时自检用 `python scripts/setup.py --check`。国内网络、Windows 的说明在根目录 `移植与环境说明.md` §四。
 > **任何 Agent 要从零复现**：再读 `references/13_完整复现手册.md`（数据流、文件契约、逐步命令、导演逻辑、包装设计逻辑、代码要点、验收口径、坑）。
-> **换机器、换 AI 接手、第一次装**：先读根目录的 `移植与环境说明.md`（全部规范、外部工具、其他 skill、系统环境、安装与自检、数据契约、红线），
-> 再跑 `bash scripts/setup.sh` 与 `bash scripts/doctor.sh`。
+> 本文和各参考文件里的命令写成 `python3 scripts/…`：Windows 上把 `python3` 换成 `python`；`scripts/` 指本技能目录下的 scripts（技能装在哪，以这份 SKILL.md 所在的目录为准）。
 
 **你的角色是动效导演兼剪辑指导**：判断、设计、动画、配乐、质检都用代码完成。每个决定都拿参考作品比；
 没有 bug 不等于做完，能和参考片摆在一条信息流里不露怯才算做完。
@@ -48,7 +47,8 @@ unattended 模式用 `suggest_style` 第一名（F 有保底分，没有明显�
 
 ## 1 · 流程（每步有产物，产物不出来不进下一步）
 
-脚本都在 `scripts/`，只依赖 ffmpeg、whisper-cli、Python 3.9（numpy／Pillow／fonttools）、Node（共享 Remotion 运行时）。首次用先跑 `bash scripts/setup.sh`，再 `bash scripts/doctor.sh` 到 `[doctor] OK`。
+脚本都在 `scripts/`，只依赖 ffmpeg、whisper-cli、Python 3.9（numpy／Pillow／fonttools）、Node（共享 Remotion 运行时）。首次用先跑 `python scripts/setup.py` 到 `[setup] OK`（缺的它会按系统装，国内走镜像）。
+每做完一步跑一次 `python scripts/next.py <工程>`，它告诉你下一步；下表是全貌。
 
 | 步 | 做什么 | 命令 | 产物 |
 |---|---|---|---|
@@ -147,10 +147,10 @@ AI 生成的渠道全在 `template/gen_providers.json`（RunningHub 应用／Run
 
 ## 6 · 验收与评审（详见 `06`）
 
-`qa.py` 量 27 项：视频流帧数、尺寸帧率、第一帧、冻结（只量画面窗，落版豁免）、画面窗空白帧、响度、真峰值、配乐不糊人声、字幕对位（量「字完整可读的那一帧」）、口型、字幕停留、
+`qa.py` 量 27 项（Windows／Linux 上「B-roll 可读文字」一项没有文字识别、会标「跳过」，要人看抽帧图）：视频流帧数、尺寸帧率、第一帧、冻结（只量画面窗，落版豁免）、画面窗空白帧、响度、真峰值、配乐不糊人声、字幕对位（量「字完整可读的那一帧」）、口型、字幕停留、
 对比度（理论＋成片实测）、安全区、屏上文字出处、大字卡完整可读 ≥1.3s、人脸碎片、人脸连续时长、B-roll 长度、人脸占比、近空画面、B-roll 重复帧、B-roll 内部亮度跳变、**B-roll 亮度下限**、**B-roll 可读文字**、片尾杂音、账号主题对比度（信息卡在 facts.cards 登记并入「出处」一项）；`seams.py` 出每个剪辑点前后 8 帧（含切点本帧）的接缝图。
 
-> B-roll 亮度下限＝每条 ≥55 且 ≥ 人脸镜平均亮度 ×0.5（10-27：星轨镜头 YAVG 27.8、近黑 5 秒，25 项全过没拦住）；
+> B-roll 亮度下限＝每条 ≥55 且 ≥ 人脸镜平均亮度 ×0.5（10-27：星轨镜头 YAVG 27.8、近黑 5 秒，当时的 25 项全过没拦住）；
 > B-roll 可读文字＝Vision OCR 抽 3 帧，报 ≥4 字且置信度 ≥0.5 的块（10-27：1941 年首日封满屏可读英文）。
 > 这两项都是「自动验收过了、成片仍然有硬伤」的那种，报了就去看，不是走流程。
 然后**派一个没看过制作过程的评审子代理**（提示词模板在 `06` §二）：静音解读、逐帧抽查、对标参考片、事实核查、导演审片，
@@ -183,11 +183,13 @@ AI 生成的渠道全在 `template/gen_providers.json`（RunningHub 应用／Run
 10. **数字卡的数字冲出卡面、字幕把 `1-1.5%` 拆开**：数字按卡宽自动 fit；断行把数字、百分号、连字符、英文缩写当整体，不拆。
 11. **落版默认写「下期」**：没有下一期就不要写，`build.py` 会查口播里有没有「下期／下一个视频」这个词。
 12. **报尾堆装饰线**：只留两行小字，左品牌右日期，不加分隔线、不加进度底轨。
-13. **只改一套包的共用件**：报尾／名字条／角标／大字卡在六套里各有一份，改一处不会同步，必须六套一起改、每套渲一帧核对。
+13. **只改一套包的共用件**：报尾／名字条／角标／大字卡在各套风格包里各有一份，改一处不会同步，必须每套一起改、每套渲一帧核对。
 14. **B-roll 只换条不换类**：十条里六条是手，片子照样单调。按「人／手／建筑／文件／物件／空镜」看类型，相邻两条不同类，手部特写 ≤2 条。
 15. **「复现」拷了别人的判定**（10-30）：拷参考工程的 decompose／edits／broll 再渲一遍，片子当然一样——那不是复现。判定、素材、出处必须本工程自己做。
 16. **完整版做得比极简档还少**（10-30）：手写分镜漏了金银整行、屏上字、插条。现在完整版从 `lite_plan.py --full` 的底稿升级，`build.py` 按片长硬查。
 17. **审片批量放行、数字自己标已核**（10-30）：审片理由 <8 字或写「通过」build 停；numcheck 报的数字列进待人确认清单，不自己标。
+18. **填空式的检查挡不住走捷径**（11-10）：先下 7 条通用素材分给 11 句、see 事后补，why／see 都「填了」。完整版 build 现在查过程证据：素材复用面（重复使用的 >20% 就停）、每条素材是不是出自这一镜自己的候选表（`stock.py plan`；另外来的写 `pick_note`）、文件指纹（整份从别的工程拷来的 transcript／decompose／facts 会被认出来）。
+19. **看不了图的模型不许「审」图**（11-10）：审片表、候选图、关键帧、接缝图都是图片。纯文本模型走极简档，把这些图发给用户判，交付里写明哪些没经目检。
 
 ## 9 · 不归这里管的
 
@@ -219,15 +221,18 @@ AI 生成的渠道全在 `template/gen_providers.json`（RunningHub 应用／Run
 | 验收、派评审、写交付清单 | `references/06_验收与评审循环.md` |
 | 脚本报错、渲染失败、对位不准 | `references/07_踩坑记录.md` |
 | 想借别的口播工具的做法、要做 App 演示镜头 | `references/09_借鉴_talk-workbench.md` |
-| 开工前定风格方向 | `~/.agents/skills/IFA-AI人物视频/references/12_已用形式登记.md` |
+| 开工前定风格方向（装了父技能 IFA-AI人物视频 时） | 父技能目录下的 `references/12_已用形式登记.md` |
+| 安装、换机器、Windows、国内网络、离线包 | `移植与环境说明.md` §三、§四、§九 |
 
 ## 11 · 环境
 
-- 共享运行时 `runtime/`（Remotion 4.0.484，锁版本）；工程里的 `remotion/node_modules` 是软链，**工程里永远不跑 npm install**。
-- `remotion.config.ts`：`gl=angle`、并发 3–4、OffthreadVideo 缓存 512MB（2GB 会把长片挤崩）。
-- 整片**分段渲染**（render.py 默认每 600 帧一个进程、无损拼接、核对帧数）：一个进程连续跑太久会在中途断开（07 #70）。
-- 转写：`whisper-cli` ＋ `~/.cache/whisper-cpp/ggml-small.bin`；人脸检测：macOS Vision（`scripts/face.swift`，首次自动编译）。
-- 免费素材：`firecrawl` CLI（Pexels 搜索页）；生成：`gen_providers.json`＋环境变量里的密钥。
-- 素材库路径失效（文件夹被挪走）：`python3 scripts/broll_index.py <工程> --relink <新目录> [...]`。
-- 测试工程：`~/Desktop/ 复星财富/IFA宣传/口播成片验证_1018/`（2026-10-22，10-18 原片；六轮独立评审；A 定稿＝out/成片_9x16.mp4；六套样片 out/样片_*.mp4，生成脚本 make_variants.py）。
-- K2 的数字用系统字体 Helvetica Neue、图号用 SF Mono／Menlo（macOS 自带）；K3 的 logo 在 `template/remotion/public/brand/logo.png`（取自 IFA图文卡）。
+- **安装与自检**：`python scripts/setup.py`（装）／`--check`（只查）／`--smoke`（渲一帧验证）／`--offline <目录>`（用离线包）／`--pack <目录> --target win`（给同事做离线包）。三个系统同一个脚本；npm 源、PyPI 源先测哪个通，无头浏览器／Node／ffmpeg 走 npmmirror，转写模型走 hf-mirror，都有总时限和断点续传。
+- 共享运行时 `runtime/`（Remotion 4.0.484，锁版本）；工程里的 `remotion/node_modules` 是链接（macOS 软链、Windows 目录联接），**工程里永远不跑 npm install**。
+- 渲染：`render.py` **代码包只打一次**，关键帧和各分段共用（以前每张、每段都重新打包并复制一遍 public/）；并发按核数与内存自动定（最多 3，8GB 内存 1 个；`IFA_RENDER_CONCURRENCY` 可改）；整片分段渲（每 600 帧一个进程、无损拼接、核对帧数）。`--draft` 出半尺寸草稿，只看节奏，不能交付。**验收先看关键帧，不为验收渲整片。**
+- `remotion.config.ts`：显卡渲染（`angle`；无显卡的 Linux 自动用 `swangle`，`IFA_GL` 可改）、OffthreadVideo 缓存 512MB（2GB 会把长片挤崩）。
+- 转写：`whisper-cli`＋`~/.cache/whisper-cpp/` 下的模型（已有 `ggml-small.bin` 就用它；新装默认量化版 `ggml-small-q5_1.bin` 190MB，实测结果基本一致、纯 CPU 快约四成；`WHISPER_MODEL` 可指定）。转写出的繁体字由脚本统一转简体（`scripts/t2s.txt`）。
+- 人脸检测：macOS 用 Vision（`scripts/face.swift`，首次自动编译）；Windows／Linux 用 OpenCV（`opencv-python-headless`＋随包模型 `assets/models/`，232KB）。都没有时人脸项记「未知」，不当成无脸。画面文字识别只有 macOS 有。
+- 字体：宋体与数字体随包、编进代码包，三个系统一样；黑体用系统的（macOS 苹方／Windows 微软雅黑／Linux Noto Sans CJK）。K2 的数字用 Helvetica Neue（没有就 Arial）。
+- 免费素材：设了 `PEXELS_API_KEY`／`PIXABAY_API_KEY`（免费）走官方 API；没有就用 `firecrawl` CLI 抓 Pexels 搜索页，或只用 Coverr／Mixkit。生成：`gen_providers.json`＋环境变量里的密钥。
+- 素材库路径失效（文件夹被挪走）：`python scripts/broll_index.py <工程> --relink <新目录> [...]`。
+- 各平台差异只在 `scripts/kb.py` 处理（UTF-8、链接、字体、工具路径、人脸检测）；新脚本一律先 `import kb`，不直接写平台相关的调用。

@@ -14,11 +14,11 @@
 """
 import argparse, json, os, re, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, load, die, has
+from kb import P, load, die, has, whisper_model, t2s
 
 ap = argparse.ArgumentParser()
 ap.add_argument("proj")
-ap.add_argument("--model", default=os.environ.get("WHISPER_MODEL", os.path.expanduser("~/.cache/whisper-cpp/ggml-small.bin")))
+ap.add_argument("--model", default=whisper_model())
 a = ap.parse_args()
 proj = os.path.abspath(a.proj)
 tr = load(P(proj, "transcript.json"))
@@ -104,8 +104,8 @@ def tokens(s):
 
 def asr(path):
     r = subprocess.run(["whisper-cli", "-m", a.model, "-l", "zh", "-f", path, "-np", "-nt", "--prompt", PROMPT],
-                       capture_output=True, text=True)
-    return re.sub(r"\s+", "", r.stdout)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return t2s(re.sub(r"\s+", "", r.stdout or ""))
 
 
 rows, flagged = [], 0
@@ -139,7 +139,7 @@ with tempfile.TemporaryDirectory() as td:
 
 json.dump({"_说明": "numcheck.py 产物：flag 非空＝转写里的数字和原声对不上，要人听；听过无误在 transcript.json 那句加 num_verified: true。",
            "model": os.path.basename(a.model), "rows": rows, "unresolved": flagged},
-          open(P(proj, "work", "numcheck.json"), "w"), ensure_ascii=False, indent=1)
+          open(P(proj, "work", "numcheck.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 print("\n带数字的句子 %d 句，对不上 %d 句 → work/numcheck.json" % (len(rows), flagged))
 if flagged:
     print("处理：听原声 → 改 transcript.json 的 text（例「1-1.5%」→「千分之一到千分之一点五」）→ 加 \"num_verified\": true → 重跑本脚本、再跑 trim.py")

@@ -17,7 +17,7 @@
 """
 import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, run, load, save, die, sentence_chars, FPS, hms, encoder_args, probe
+from kb import P, run, load, save, die, sentence_chars, FPS, hms, encoder_args, probe, whisper_model, cpu_threads, t2s
 import numpy as np
 
 ap = argparse.ArgumentParser()
@@ -173,7 +173,7 @@ for i, e in enumerate(edl):
 fc.append("%sconcat=n=%d:v=1:a=0[vo]" % (vl, len(edl)))
 fc.append("%sconcat=n=%d:v=0:a=1[ao]" % (al, len(edl)))
 fcs = P(proj, "work", "trim_filter.txt")
-open(fcs, "w").write(";\n".join(fc))
+open(fcs, "w", encoding="utf-8").write(";\n".join(fc))
 run(["ffmpeg", "-v", "error", "-y", "-i", src_v, "-i", src_a, "-filter_complex_script", fcs,
      "-map", "[vo]"] + encoder_args("high") + ["-r", "30", "-an", P(proj, "work", "aroll_cut.mp4"),
      "-map", "[ao]", "-ar", "48000", "-ac", "1", P(proj, "audio", "voice_cut.wav")])
@@ -186,10 +186,10 @@ if a.verify:
     exp = "".join(c["c"] for s in out_s for c in s["chars"])
     w16 = P(proj, "work", "cut16.wav")
     run(["ffmpeg", "-v", "error", "-y", "-i", P(proj, "audio", "voice_cut.wav"), "-ar", "16000", w16])
-    model = os.environ.get("WHISPER_MODEL", os.path.expanduser("~/.cache/whisper-cpp/ggml-small.bin"))
-    run(["whisper-cli", "-m", model, "-l", "zh", "-f", w16, "-otxt", "-of", w16[:-4], "-t", "8",
+    model = whisper_model()
+    run(["whisper-cli", "-m", model, "-l", "zh", "-f", w16, "-otxt", "-of", w16[:-4], "-t", str(cpu_threads()),
          "--prompt", "以下是普通话的句子，使用简体中文。"])
-    got = open(w16[:-4] + ".txt", encoding="utf-8").read()
+    got = t2s(open(w16[:-4] + ".txt", encoding="utf-8").read())   # 重转写常出繁体：转成简体再比，否则相似度被字形差拉低
     strip = lambda t: "".join(ch for ch in t if ch.isalnum())
     e_, g_ = strip(exp), strip(got)
     r = difflib.SequenceMatcher(None, e_, g_).ratio()

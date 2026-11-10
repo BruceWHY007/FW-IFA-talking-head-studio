@@ -16,7 +16,7 @@
 """
 import argparse, json, os, re, statistics as st, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import die
+from kb import die, vision_bin, detect_faces, whisper_model, cpu_threads
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
@@ -28,16 +28,11 @@ ap.add_argument("--compare", nargs=2, metavar=("A", "B"))
 a = ap.parse_args()
 
 
-def vision(name):
-    b = os.path.expanduser("~/.cache/ifa-koubo/%s" % name)
-    if not os.path.exists(b):
-        os.makedirs(os.path.dirname(b), exist_ok=True)
-        subprocess.run(["swiftc", "-O", os.path.join(HERE, name + ".swift"), "-o", b], capture_output=True)
-    return b if os.path.exists(b) else None
+vision = vision_bin
 
 
 if a.compare:
-    A, B = [json.load(open(os.path.join(d, "measure.json"))) for d in a.compare]
+    A, B = [json.load(open(os.path.join(d, "measure.json"), encoding="utf-8")) for d in a.compare]
     rows = [("时长 s", "duration"), ("满屏讲述占比", "share_A"), ("画中画占比", "share_PIP"), ("无人脸占比", "share_BG"),
             ("满屏讲述段中位 s", "A_run_median"), ("无人脸段中位 s", "BG_run_median"), ("切点数", "cuts"), ("中位段长 s", "cut_median"),
             ("字幕中心线 y（1920 高）", "cap_cy"), ("字幕字号 px（1080 宽）", "cap_px"), ("人脸宽占画幅", "face_w"),
@@ -67,7 +62,7 @@ m = {"video": V, "duration": round(dur, 2), "w": W, "h": H}
 fd = tempfile.mkdtemp(prefix="refm_")
 subprocess.run(["ffmpeg", "-v", "error", "-i", V, "-vf", "fps=%g,scale=720:-2" % a.fps, "-q:v", "3", os.path.join(fd, "%05d.jpg")])
 subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", V, "-vf", "fps=1,scale=180:-2,tile=10x6", "-q:v", "3", os.path.join(O, "sheet_1fps_%02d.jpg")])
-faces = json.loads(subprocess.run([vision("face"), fd], capture_output=True, text=True).stdout or "{}") if vision("face") else {}
+faces = detect_faces(fd)[0] or {}
 env = dict(os.environ, OCR_MIN_CHARS="1", OCR_MIN_CONF="0.3")
 ocr = json.loads(subprocess.run([vision("text"), fd], capture_output=True, text=True, env=env).stdout or "{}") if vision("text") else {}
 from PIL import Image, ImageStat
@@ -143,22 +138,22 @@ m["lufs"], m["lra"], m["peak"] = [float(x) if x else None for x in (g(r"I:\s+(-?
 if a.asr:
     wav = os.path.join(fd, "a.wav")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", V, "-ar", "16000", "-ac", "1", wav])
-    model = os.environ.get("WHISPER_MODEL", os.path.expanduser("~/.cache/whisper-cpp/ggml-small.bin"))
+    model = whisper_model()
     subprocess.run(["whisper-cli", "-m", model, "-l", "zh", "-oj", "-of", os.path.join(O, "asr"), wav], capture_output=True)
     try:
-        segs_ = json.load(open(os.path.join(O, "asr.json")))["transcription"]
+        segs_ = json.load(open(os.path.join(O, "asr.json"), encoding="utf-8"))["transcription"]
         txt = "".join(s["text"] for s in segs_)
         han = len(re.findall(r"[\u4e00-\u9fff]", txt))
         m["chars"], m["cps"] = han, round(han / dur, 2)
         m["open10"] = "".join(s["text"] for s in segs_ if s["offsets"]["from"] < 10000)
     except Exception:
         pass
-json.dump(m, open(os.path.join(O, "measure.json"), "w"), ensure_ascii=False, indent=1)
+json.dump(m, open(os.path.join(O, "measure.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 rep = ["# 量化拆解：%s" % os.path.basename(V), "", "| 指标 | 值 |", "|---|---|"]
 for k, v in m.items():
     if k != "video":
         rep.append("| %s | %s |" % (k, v))
 rep += ["", "联系表：sheet_1fps_*.jpg（每格 1 秒，10 列 × 6 行＝1 分钟一张）"]
-open(os.path.join(O, "report.md"), "w").write("\n".join(rep) + "\n")
+open(os.path.join(O, "report.md"), "w", encoding="utf-8").write("\n".join(rep) + "\n")
 print("✓ %s  A %.0f%% / PIP %.0f%% / BG %.0f%%  字幕 y≈%s %spx  切点 %s  %s LUFS" % (os.path.basename(V), m["share_A"] * 100, m["share_PIP"] * 100,
       m["share_BG"] * 100, m.get("cap_cy"), m.get("cap_px"), m["cuts"], m["lufs"]))

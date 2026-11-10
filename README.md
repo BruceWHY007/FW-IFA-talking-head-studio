@@ -23,12 +23,19 @@ npx skills add BruceWHY007/FW-IFA-talking-head-studio -g --agent claude-code
 
 装到 `~/.agents/skills/fw-ifa-talking-head-studio`（npx 会把名字转小写）。换 Agent 就把 `claude-code` 换成 `codex`／`cursor` 等。
 
-装完先自检：
+装完跑安装脚本（macOS／Windows／Linux 同一条，只需要先有 Python 3.9+；Windows 上写 `python`）：
 
 ```bash
-bash ~/.agents/skills/fw-ifa-talking-head-studio/scripts/setup.sh     # 装 Remotion 运行时（只装一次，约 500MB）
-bash ~/.agents/skills/fw-ifa-talking-head-studio/scripts/doctor.sh    # 逐项报「有／没有／怎么补」，最后一行要是 [doctor] OK
+python3 ~/.agents/skills/fw-ifa-talking-head-studio/scripts/setup.py            # 装到能用，最后一行是 [setup] OK
+python3 ~/.agents/skills/fw-ifa-talking-head-studio/scripts/setup.py --check --smoke   # 自检＋渲一帧验证
 ```
+
+- **国内网络直连就能装**：npm、pip 先测哪个源通；无头浏览器、ffmpeg、Node 走 npmmirror；转写模型走 hf-mirror。每个下载有总时限、断点续传，不会无限等。
+- **Windows 原生可用，不需要 WSL、不需要管理员权限**：缺 ffmpeg／Node／whisper 时脚本自动下到 `~/.cache/ifa-koubo/`，不改系统 PATH。（11-10：Windows 路径已核对下载源与脚本逻辑，真机整条流程待验证，装的时候请留下 `setup.py` 的输出。）
+- **GitHub 拉不动**：让同事把技能文件夹打包发来（不要带 `runtime/node_modules`），放进 Agent 的技能目录后跑 `setup.py`。
+- **还是下不动**：有网的人跑 `setup.py --pack <目录> --target win` 做离线包（约 400MB），装的人跑 `setup.py --offline <目录>`。
+
+装好以后不用记流程：每做完一步跑 `python3 scripts/next.py <工程目录>`，它只告诉你下一步。
 
 ## 最短用法
 
@@ -73,11 +80,13 @@ python3 $SK/scripts/build.py ~/片库/项目/这一期 --decompose ~/片库/项�
 
 | 必需 | 说明 |
 |---|---|
-| ffmpeg / ffprobe | 需带 loudnorm、sidechaincompress、minterpolate、ebur128 等滤镜 |
-| whisper-cli + ggml-small 模型 | 转写；`~/.cache/whisper-cpp/ggml-small.bin`（465MB） |
-| Node ≥18 + npm | Remotion 运行时（`setup.sh` 用 `runtime/package.json` 装到 skill 目录内） |
-| Python 3.9+ | numpy / Pillow / fonttools |
-| macOS（推荐） | 人脸检测与文字识别用 Vision；Linux 上这两项会跳过 |
+| Python 3.9+ | numpy／Pillow／fonttools；非 macOS 另加 opencv-python-headless（`setup.py` 用 pip 装） |
+| ffmpeg／ffprobe | 需带 loudnorm、sidechaincompress、minterpolate、ebur128 等滤镜；Windows 上 `setup.py` 自动下静态版 |
+| Node ≥18 | Remotion 运行时（`setup.py` 装到 skill 目录内的 `runtime/`，约 330MB）；Windows 没有 Node 时自动下便携版 |
+| 无头浏览器 | chrome-headless-shell，`setup.py` 从 npmmirror 装（约 110MB） |
+| whisper-cli＋模型 | 转写；新装默认量化版 `ggml-small-q5_1`（190MB），已有 `ggml-small.bin` 就用它 |
+
+macOS 有系统自带的人脸检测与画面文字识别；Windows／Linux 人脸检测走 OpenCV，画面文字识别没有（要人看抽帧图）。
 
 可选：`firecrawl` CLI（Pexels 检索）、`PIXABAY_API_KEY`（Pixabay 视频与图片 API）、Swift（Vision 编译）。
 

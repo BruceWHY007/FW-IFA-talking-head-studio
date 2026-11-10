@@ -24,10 +24,10 @@ Pexels 有两条路：设了 PEXELS_API_KEY 就走官方 API（竖版在服务�
   ✗ "success"  ✗ "signing document close up"（一屏全是手）  ✓ "hong kong street tram"  ✓ "modern office window city view"
 挑片规则见 references/03：相邻两条 B-roll 不能同一类画面（人／手／建筑／文件／物件／空镜）。
 """
-import glob, json, os, re, subprocess, sys, time, urllib.parse
+import glob, json, os, re, shutil, subprocess, sys, time, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kb import P, die, has, font, sid_span, cover_text, as_list
+from kb import P, die, has, font, sid_span, cover_text, as_list, vision_bin, detect_faces
 
 if len(sys.argv) < 3:
     die(__doc__)
@@ -67,9 +67,11 @@ def scrape(url, out, minbytes=30000):
     if not os.path.exists(out) or os.path.getsize(out) < minbytes:
         if not has("firecrawl"):
             die("没有 firecrawl CLI，免费素材这一路走不了；改用用户素材或生成")
-        subprocess.run(["perl", "-e", "alarm 150; exec @ARGV", "firecrawl", "scrape", url, "-f", "rawHtml", "-o", out],
-                       capture_output=True)
-    return open(out, errors="ignore").read() if os.path.exists(out) else ""
+        try:   # 150 秒硬超时（firecrawl 偶尔挂住不返回）；Windows 上 firecrawl 是 .cmd，要给全路径
+            subprocess.run([shutil.which("firecrawl") or "firecrawl", "scrape", url, "-f", "rawHtml", "-o", out], capture_output=True, timeout=150)
+        except subprocess.TimeoutExpired:
+            pass
+    return open(out, encoding="utf-8", errors="ignore").read() if os.path.exists(out) else ""
 
 
 def slug(q):
@@ -144,7 +146,7 @@ def get_pexels(vid, name, it):
         return best["link"], it.get("page") or "https://www.pexels.com/video/%s/" % vid, (best["w"], best["h"]), "%sfps" % round(best["fps"] or 0)
     page = PAGE["pexels"] % (it.get("slug") or "x", vid) if it.get("slug") else "https://www.pexels.com/video/%s/" % vid
     pat = r'video-files/%s/([0-9a-z-]+?)_(\d+)_(\d+)_(\d+)fps\.mp4' % vid
-    h = "".join(open(f, errors="ignore").read() for f in glob.glob(os.path.join(D, "_html", "s_*.html")))
+    h = "".join(open(f, encoding="utf-8", errors="ignore").read() for f in glob.glob(os.path.join(D, "_html", "s_*.html")))
     files = re.findall(pat, h)
     if not files or max(max(int(f[1]), int(f[2])) for f in files) < 1920:
         h2 = scrape(page, os.path.join(D, "_html", "v_%s.html" % vid))
@@ -175,7 +177,7 @@ def get_coverr(sl, name, it):
     # 注意：HEAD 对不存在的 2160p 也回 200，必须用 range GET 探一次真状态（10-27 实测）
     for q in ("1080p", "720p", "360p"):
         src = "https://cdn.coverr.co/videos/%s/%s.mp4" % (sl, q)
-        st = subprocess.run(["curl", "-s", "-r", "0-2048", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "20", src],
+        st = subprocess.run(["curl", "-s", "-r", "0-2048", "-o", os.devnull, "-w", "%{http_code}", "--max-time", "20", src],
                             capture_output=True, text=True).stdout.strip()
         if st == "206":
             return src, PAGE["coverr"] % sl, None, q
@@ -304,7 +306,7 @@ def search_images(q, n=24):
     os.makedirs(D2, exist_ok=True)
     out = []
     reg_p = os.path.join(D2, "img_picks.json")
-    reg = json.load(open(reg_p)) if os.path.exists(reg_p) else {}
+    reg = json.load(open(reg_p, encoding="utf-8")) if os.path.exists(reg_p) else {}
     for i, h in enumerate(hits):
         name = "img_%s_%s" % (slug(q)[:18], h["id"])
         fp = os.path.join(D2, name + ".jpg")
@@ -314,7 +316,7 @@ def search_images(q, n=24):
             out.append((name, fp, h.get("pageURL", ""), h.get("tags", "")[:40]))
             reg[name] = dict(source="pixabay", page=h.get("pageURL", ""), file=name + ".jpg", licence=LIC["pixabay"],
                              credit="%s / Pixabay" % (h.get("user") or "佚名"))
-    json.dump(reg, open(reg_p, "w"), indent=1, ensure_ascii=False)
+    json.dump(reg, open(reg_p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     return out
 
 
@@ -400,14 +402,6 @@ def pick_sources(one=None):
 
 
 # ---------------- 自动体检：候选缩略图上打角标（字／脸／暗／静），挑片时一眼排除 ----------------
-def _vision_bin(name):
-    b = os.path.expanduser("~/.cache/ifa-koubo/%s" % name)
-    if not os.path.exists(b) and has("swiftc"):
-        os.makedirs(os.path.dirname(b), exist_ok=True)
-        subprocess.run(["swiftc", "-O", os.path.join(os.path.dirname(os.path.abspath(__file__)), name + ".swift"), "-o", b], capture_output=True)
-    return b if os.path.exists(b) else None
-
-
 def vet(pairs):
     """pairs: [(item, 缩略图路径)] → {路径: [角标…]}。文字用 Vision OCR（≥4 字、置信 ≥0.5），人脸宽 ≥18% 画幅算「大张正脸」"""
     import shutil, tempfile
@@ -432,14 +426,17 @@ def vet(pairs):
                 shutil.copy(q, os.path.join(tmp, "%04d_%d.jpg" % (k, j + 1)))
                 extra.setdefault(k, []).append(q)
     res = {}
-    for nm in ("text", "face"):
-        b = _vision_bin(nm)
-        if b:
-            try:
-                env = dict(os.environ, OCR_MIN_CHARS="3", OCR_MIN_CONF="0.3")
-                res[nm] = json.loads(subprocess.run([b, tmp], capture_output=True, text=True, timeout=300, env=env).stdout or "{}")
-            except Exception:
-                res[nm] = {}
+    b = vision_bin("text")   # 文字识别只有 macOS 有；其他系统候选图上不会有「字」角标，挑片时自己看一眼缩略图里有没有字
+    if b:
+        try:
+            env = dict(os.environ, OCR_MIN_CHARS="3", OCR_MIN_CONF="0.3")
+            res["text"] = json.loads(subprocess.run([b, tmp], capture_output=True, text=True, timeout=300, env=env).stdout or "{}")
+        except Exception:
+            res["text"] = {}
+    try:
+        res["face"] = detect_faces(tmp)[0] or {}
+    except Exception:
+        res["face"] = {}
     for k, (it, p) in enumerate(pairs):
         keys = [f for f in os.listdir(tmp) if f.startswith("%04d_" % k)]
         if any(res.get("text", {}).get(f) for f in keys):
@@ -515,13 +512,13 @@ def do_search(q, srcs):
             d.text((x + 6, y + ch - 28), "".join(fl), fill="white", font=font(22))
     sheet.save(os.path.join(D, "_thumbs", "sheet_%s.jpg" % slug(q)), quality=82)
     idx_p = os.path.join(D, "_thumbs", "index.json")
-    idx = json.load(open(idx_p)) if os.path.exists(idx_p) else {}
+    idx = json.load(open(idx_p, encoding="utf-8")) if os.path.exists(idx_p) else {}
     for it, _p in ok:
         idx["%s:%s" % (it["src"], it["id"])] = it
         idx.setdefault(it["id"], it)
         if it["src"] not in ("pexels", "pixabay"):   # coverr 的 slug 很长：用尾部 10 位当短名
             idx.setdefault("%s:%s" % (it["src"], it["id"][-10:]), it)
-    json.dump(idx, open(idx_p, "w"), indent=1, ensure_ascii=False)
+    json.dump(idx, open(idx_p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     return q, ok
 
 
@@ -536,7 +533,7 @@ def do_get(key, name):
     else:
         s, vid = "pexels", key
     idx_p = os.path.join(D, "_thumbs", "index.json")
-    idx = json.load(open(idx_p)) if os.path.exists(idx_p) else {}
+    idx = json.load(open(idx_p, encoding="utf-8")) if os.path.exists(idx_p) else {}
     it = idx.get("%s:%s" % (s, vid)) or idx.get(vid) or {"src": s, "id": vid, "slug": ""}
     vid = it.get("id") or vid
     res = GET[s](vid, name, it)
@@ -549,10 +546,10 @@ def do_get(key, name):
         if not os.path.exists(out) or os.path.getsize(out) < 20000:
             curl(src, out, 120)
         reg_p = os.path.join(D2, "img_picks.json")
-        reg = json.load(open(reg_p)) if os.path.exists(reg_p) else {}
+        reg = json.load(open(reg_p, encoding="utf-8")) if os.path.exists(reg_p) else {}
         reg[name] = dict(source=s, page=page, file=name + ".jpg", licence=it.get("licence") or LIC[s],
                          credit=it.get("credit", ""))
-        json.dump(reg, open(reg_p, "w"), indent=1, ensure_ascii=False)
+        json.dump(reg, open(reg_p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
         print("✓ %s（图片）%s" % (name, it.get("licence", "")[:40]))
         return
     out = os.path.join(D, name + ".mp4")
@@ -565,9 +562,9 @@ def do_get(key, name):
     w, h = (int(parts[0]), int(parts[1])) if len(parts) >= 2 and parts[0].isdigit() else (0, 0)
     fps = parts[2] if len(parts) >= 3 else note
     picks_p = os.path.join(D, "stock_picks.json")
-    picks = json.load(open(picks_p)) if os.path.exists(picks_p) else {}
+    picks = json.load(open(picks_p, encoding="utf-8")) if os.path.exists(picks_p) else {}
     picks[name] = dict(source=s, id=vid, url=src, w=w, h=h, fps=fps, page=page, licence=LIC[s], credit=it.get("credit", ""))
-    json.dump(picks, open(picks_p, "w"), indent=1, ensure_ascii=False)
+    json.dump(picks, open(picks_p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     kb = os.path.getsize(out) // 1024 if os.path.exists(out) else 0
     print("✓ %s %s:%s %sx%s %s %dKB" % (name, s, vid, w, h, fps, kb))
 
@@ -594,21 +591,21 @@ elif cmd == "images":
     D2 = P(proj, "broll", "img")
     os.makedirs(D2, exist_ok=True)
     lic_p = P(proj, "broll", "img", "img_picks.json")
-    reg = json.load(open(lic_p)) if os.path.exists(lic_p) else {}
+    reg = json.load(open(lic_p, encoding="utf-8")) if os.path.exists(lic_p) else {}
     for q in args:
         got = search_images(q)
         for name, fp, page, tags in got:
             reg[name] = dict(source="pixabay", page=page, tags=tags, file=os.path.basename(fp),
                              licence=LIC["pixabay"])
         print("== %s %d 张 → %s" % (q, len(got), D2))
-    json.dump(reg, open(lic_p, "w"), indent=1, ensure_ascii=False)
+    json.dump(reg, open(lic_p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
 elif cmd == "search":
     with ThreadPoolExecutor(3) as ex:
         for q, r in ex.map(lambda q: do_search(q, pick_sources()), args):
             print("==", q, len(r), "条 →", os.path.join(D, "_thumbs", "sheet_%s.jpg" % slug(q)))
 elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
     # 概念词表：抽象财经概念 → 看得见的画面（R0 的做法：「监管看得见」配数据地球，「长期」配钟表与公路）
-    LEX = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "template", "broll_lexicon.json")))
+    LEX = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "template", "broll_lexicon.json"), encoding="utf-8"))
     def suggest(text):
         hit = []
         for c in LEX["concepts"]:
@@ -626,17 +623,17 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
         DEFAULTS = [["hong kong city skyline", "modern office window city view"], ["hong kong street tram", "city traffic night"],
                     ["business meeting office", "documents desk close up"]]
         dec_p = P(proj, args[args.index("--decompose") + 1]) if "--decompose" in args else P(proj, "decompose.json")
-        dec = json.load(open(dec_p))
+        dec = json.load(open(dec_p, encoding="utf-8"))
         _tr_p = P(proj, "work", "transcript_cut.json") if os.path.exists(P(proj, "work", "transcript_cut.json")) else P(proj, "transcript.json")
-        SENTS = json.load(open(_tr_p))["sentences"]
+        SENTS = json.load(open(_tr_p, encoding="utf-8"))["sentences"]
         ctext = lambda sh: cover_text(sh.get("cover", ""), SENTS)
         rv_p = os.path.join(D, "auto_review.json")
-        rv = json.load(open(rv_p)) if os.path.exists(rv_p) else {"_说明": "", "shots": {}}
+        rv = json.load(open(rv_p, encoding="utf-8")) if os.path.exists(rv_p) else {"_说明": "", "shots": {}}
         picks_p = os.path.join(D, "stock_picks.json")
 
         def pick_key(sh):
             nm = str(sh.get("pick", ""))[6:]
-            it = (json.load(open(picks_p)) if os.path.exists(picks_p) else {}).get(nm, {})
+            it = (json.load(open(picks_p, encoding="utf-8")) if os.path.exists(picks_p) else {}).get(nm, {})
             return "%s:%s" % (it.get("source"), it.get("id")) if it else None
 
         def auto_pick(only=None):
@@ -680,7 +677,7 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
             # 审片表：每条自动素材一行——[前一个画面][素材 3 帧][后一个画面]＋这句原话、检索词、自动量的亮度差／色调差／相邻同词
             from PIL import Image, ImageDraw
             import numpy as _np
-            tr_ = json.load(open(P(proj, "transcript.json")))
+            tr_ = json.load(open(P(proj, "transcript.json"), encoding="utf-8"))
             sents = tr_["sentences"]
             aroll = P(proj, "work", "aroll.mp4")
             strip_ = lambda t: re.sub(r"[，。、！？；：,.!?;: 「」“”…]", "", t or "")
@@ -768,7 +765,7 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
             sheet.save(out_, quality=85)
             rv["_说明"] = ("自动素材审片：看 auto_review.jpg，每条填 verdict（keep／replace／drop）和 reason；replace 可在 decompose 该镜写新的 q。"
                           "然后 stock.py <工程> redo --decompose <文件> 重取所有 replace 的镜头，再 review。build 会对没审完的报警。")
-            json.dump(rv, open(rv_p, "w"), ensure_ascii=False, indent=1)
+            json.dump(rv, open(rv_p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
             print("审片表 → %s（%d 条）；判完写 %s" % (out_, len(rows), rv_p))
 
         if cmd == "auto":
@@ -795,18 +792,19 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
             dec["shots"] = [sh for sh in dec["shots"] if not sh.pop("_dropped", False)]
             n = auto_pick(only=set(ids))
             print("重取 %d／%d 条" % (n, len(ids)))
-        json.dump(dec, open(dec_p, "w"), ensure_ascii=False, indent=1)
+        json.dump(dec, open(dec_p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         make_review()
         sys.exit(0)
     dec_p = P(proj, "decompose.json")
     if "--decompose" in args:
         dec_p = P(proj, args[args.index("--decompose") + 1])
-    dec = json.load(open(dec_p))
+    dec = json.load(open(dec_p, encoding="utf-8"))
     _trp = P(proj, "work", "transcript_cut.json") if os.path.exists(P(proj, "work", "transcript_cut.json")) else P(proj, "transcript.json")
-    SENTS_P = json.load(open(_trp))["sentences"]
+    SENTS_P = json.load(open(_trp, encoding="utf-8"))["sentences"]
     PD = os.path.join(D, "plan")
     os.makedirs(PD, exist_ok=True)
-    plan = {}
+    _pp = os.path.join(PD, "plan.json")
+    plan = json.load(open(_pp, encoding="utf-8")) if os.path.exists(_pp) else {}   # 累加：以前几镜的候选记录留着
     from PIL import Image, ImageDraw
     for sh in dec.get("shots", []):
         if sh.get("type") not in ("B", "S") or sh.get("pick") or sh.get("image"):
@@ -845,10 +843,12 @@ elif cmd in ("plan", "lexicon", "auto", "review", "redo"):
                 d.text((x + 6, y + ch - 28), "".join(fl), fill="white", font=font(22))
         sp = os.path.join(PD, "%s.jpg" % sh["id"])
         sheet.save(sp, quality=82)
-        plan[sh["id"]] = {"cover": sh.get("cover"), "layout": sh.get("layout", "full"), "q": qs, "sheet": sp,
-                          "candidates": [{"key": "%s:%s" % (it["src"][:2], it["id"]), "flags": FLAGS.get(p, [])} for it, p in uniq]}
+        _old = [c for c in plan.get(sh["id"], {}).get("candidates", [])]
+        _new = [{"key": "%s:%s" % (it["src"][:2], it["id"]), "flags": FLAGS.get(p, [])} for it, p in uniq]
+        plan[sh["id"]] = {"cover": sh.get("cover"), "see": sh.get("see", ""), "layout": sh.get("layout", "full"), "q": qs, "sheet": sp,
+                          "candidates": _new + [c for c in _old if c["key"] not in {x["key"] for x in _new}]}
         print("== %s %d 条候选 → %s" % (sh["id"], len(uniq), sp))
-    json.dump(plan, open(os.path.join(PD, "plan.json"), "w"), ensure_ascii=False, indent=1)
+    json.dump(plan, open(os.path.join(PD, "plan.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print("✓ 看 broll/stock/plan/*.jpg 挑片（先看没有红角标的）→ stock.py get <源:id> <名字> → decompose 写 pick")
 elif cmd == "get":
     for i in range(0, len(args), 2):

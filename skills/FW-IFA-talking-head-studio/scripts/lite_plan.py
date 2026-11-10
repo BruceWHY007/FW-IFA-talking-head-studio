@@ -202,6 +202,7 @@ hl = hl[:10]
 
 first = strip(rows[0]["text"])[:14] if rows else "口播笔记"
 dec = {
+    "_pid": load(P(proj, "project.json"), {}).get("pid", ""),
     "_说明": ("完整版底稿（lite_plan.py --full）：自动内容＋小窗轮换占位。按「_待升级」逐条做完再 build；build 按片长查表达层，不够就停。"
               if a.full else "极简档自动规划（lite_plan.py）：数字卡＋屏上字＋清单卡＋金银整行＋满幅 B-roll；素材走 stock.py auto → 审片。"),
     "style": "F",
@@ -241,7 +242,7 @@ out = P(proj, a.out or ("decompose.json" if a.full else "decompose_lite.json"))
 if a.full and os.path.exists(out) and not a.out:
     os.replace(out, out + ".bak")
     print("· 旧的 decompose.json 备份成 decompose.json.bak")
-json.dump(dec, open(out, "w"), ensure_ascii=False, indent=1)
+json.dump(dec, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 ns = {k: sum(1 for s in shots if s["type"] == k) for k in "GIB"}
 print("✓ %s：数字卡 %d、清单卡 %d、B-roll %d、屏上字 %d 组%s、金银整行 %d、关键词 %d" % (
     os.path.basename(out), ns["G"], ns["I"], ns["B"], len(texts), "＋进度坞" if tracker else "", len(gold) + len(silver), len(hl)))

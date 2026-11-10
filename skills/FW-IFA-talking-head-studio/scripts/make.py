@@ -10,6 +10,8 @@
 """
 import argparse, os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import kb  # noqa: F401  平台处理都在 kb（Windows 上先切到 UTF-8）
 ap = argparse.ArgumentParser()
 ap.add_argument("proj")
 ap.add_argument("--bgm", default="")
@@ -45,14 +47,14 @@ if not a.test:
     # 账号登记：记下这一支用了什么（风格、主题、封面形式、卡型），下一支据此错开
     import json, time
     proj = os.path.abspath(a.proj)
-    tl = json.load(open(os.path.join(proj, "remotion", "src", "timeline.json")))
+    tl = json.load(open(os.path.join(proj, "remotion", "src", "timeline.json"), encoding="utf-8"))
     if tl.get("account") and not a.no_register:
         regp = os.path.join(os.path.dirname(proj), "_口播形式登记.json")
-        reg = json.load(open(regp)) if os.path.exists(regp) else {"_说明": "口播成片的账号登记：每支一行。build.py 读它沿用账号主题、错开封面形式。", "entries": []}
+        reg = json.load(open(regp, encoding="utf-8")) if os.path.exists(regp) else {"_说明": "口播成片的账号登记：每支一行。build.py 读它沿用账号主题、错开封面形式。", "entries": []}
         reg["entries"] = [e for e in reg["entries"] if not (e.get("project") == os.path.basename(proj) and e.get("out") == (a.out or "成片_9x16.mp4"))]
         reg["entries"].append({"time": time.strftime("%Y-%m-%d %H:%M"), "account": tl["account"], "project": os.path.basename(proj), "out": a.out or "成片_9x16.mp4",
                                "style": tl["style"], "theme": (tl.get("theme") or {}).get("name", ""), "cover_form": (tl.get("cover") or {}).get("form", "title"),
                                "cards": sorted(set((x.get("info") or {}).get("kind", "") for x in tl["shots"] if x["type"] == "I"))})
-        json.dump(reg, open(regp, "w"), ensure_ascii=False, indent=1)
+        json.dump(reg, open(regp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print("✓ 账号登记 → " + regp)
     print("\n下一步：派一个没看过制作过程的评审子代理（references/06 §二 的提示词），按它的 P0/P1 修，记 ledger.md")

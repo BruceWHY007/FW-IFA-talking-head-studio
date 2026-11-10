@@ -113,6 +113,13 @@ def probe_img(p):
 
 warn = list(PACK_MSG) + FIXED
 HARD = []   # 不加 --draft 就停的项
+# 工程指纹（11-10）：脚本生成的文件带着本工程的 pid。对不上＝整份从别的工程拷来的（11-01 复现测试：transcript 与素材判定原样拷自上一个工程）
+_pid = pj.get("pid")
+if _pid:
+    for _nm, _obj in (("transcript.json", load(P(proj, "transcript.json"), {})), (os.path.basename(a.decompose), dec), ("facts.json", load(P(proj, "facts.json"), {}))):
+        if isinstance(_obj, dict) and _obj.get("_pid") and _obj["_pid"] != _pid:
+            HARD.append("%s 是从别的工程拷来的（指纹 %s ≠ 本工程 %s）：校对、判定、出处都要在本工程做，可以参考、不能整份拷。"
+                        "确实是同一条原片有意沿用：把文件里的 _pid 改成 %s，并在交付里说明沿用了哪个工程的什么" % (_nm, _obj["_pid"], _pid, _pid))
 # 自动素材审片（stock.py auto → review → redo）：自动取的素材没人挑过，审片没判完就报（10-29：6 条里 4 条是外国国旗与外国政府楼）
 _rv_p = P(proj, "broll", "stock", "auto_review.json")
 if os.path.exists(_rv_p):
@@ -307,6 +314,48 @@ for _p, _n in _picks.items():
         HARD.append("同一段素材用了 %d 次：%s——一条素材最多 2 次；每条 B-roll 按自己那句的 see 去找，不许先下几条通用素材再分给各句" % (_n, _p))
     elif _n >= 3:
         warn.append("同一段素材用了 %d 次：%s（规则：一支片子里同一条素材最多 2 次，第三次起换素材或上图卡；本地没有就按 03 的规则去免费素材库找）" % (_n, _p))
+# ---------- 2.9 过程证据（11-10）：why／see 这类填空挡不住走捷径——11-01 复现测试里 7 条通用香港素材分给 11 句，see 是事后补的、
+# 两镜抄同一句。所以完整版再查两件做没做过的事：素材复用面、每条素材是不是从这一镜自己的候选表里挑的 ----------
+if not dec.get("lite"):
+    _wv = dec.get("waive") or {}
+    _st = [s_ for s_ in dec.get("shots", []) if s_.get("type") in ("B", "S") and str(s_.get("pick", "")).startswith("stock:")]
+    _seen, _re = set(), []
+    for s_ in _st:
+        if s_["pick"] in _seen:
+            _re.append(s_["id"])
+        _seen.add(s_["pick"])
+    if len(_re) > max(1, round(len(_st) * 0.2)) and len(str(_wv.get("reuse", "")).strip()) < 8:
+        HARD.append("素材复用太多：%d 条图库 B-roll 里有 %d 条是重复使用的（%s）——这是「先下几条通用素材再分给各句」的做法。"
+                    "每条 B-roll 按自己那句的 see 单独找；确有理由就写 \"waive\": {\"reuse\": \"理由≥8字\"}" % (len(_st), len(_re), "、".join(_re)))
+    _plan = load(P(proj, "broll", "stock", "plan", "plan.json"), {})
+    _reg = load(P(proj, "broll", "stock", "stock_picks.json"), {})
+    _rvk = load(P(proj, "broll", "stock", "auto_review.json"), {}).get("shots", {}) if os.path.exists(P(proj, "broll", "stock", "auto_review.json")) else {}
+    _off = []
+    for s_ in _st:
+        _nm = s_["pick"][6:]
+        if _nm == "st_%s" % s_["id"].lower() and _rvk.get(s_["id"], {}).get("verdict") == "keep":
+            continue   # 走的是 auto → 审片那条路，审片表里判过
+        _it = _reg.get(_nm, {})
+        _key = "%s:%s" % (str(_it.get("source", ""))[:2], _it.get("id", ""))
+        _cands = {c_.get("key") for c_ in _plan.get(s_["id"], {}).get("candidates", [])}
+        if _key not in _cands and len(str(s_.get("pick_note", "")).strip()) < 8:
+            _off.append(s_["id"])
+    if _off and len(str(_wv.get("plan", "")).strip()) < 8:
+        HARD.append("这 %d 镜的素材不是从它自己的候选表里挑的：%s。完整版每条 B-roll 的做法是：先写 see（观众应该看到什么）→ 按 see 写 q → "
+                    "stock.py <工程> plan 出这一镜的候选图 broll/stock/plan/<镜号>.jpg → 对着 see 从这张图里挑 → stock.py get。"
+                    "素材确实是另外来的（用户指定、手动 search 后挑的）：在该镜写 \"pick_note\": \"从哪来、为什么贴这句（≥8字）\"" % (len(_off), "、".join(_off)))
+    _by_pick, _by_see = {}, {}
+    for s_ in _st:
+        _see = str(s_.get("see", "")).strip()
+        if _see:
+            _by_pick.setdefault(s_["pick"], set()).add(_see)
+            _by_see.setdefault(_see, set()).add(s_["pick"])
+    for _p, _ss in _by_pick.items():
+        if len(_ss) > 1:
+            warn.append("同一条素材 %s 写了 %d 种「应该看到」（%s）：一条画面只有一个样子，至少一处 see 是后补的——回去看这条素材到底拍的是什么" % (_p, len(_ss), "｜".join(sorted(_ss))[:60]))
+    for _see, _ps in _by_see.items():
+        if len(_ps) > 1:
+            warn.append("不同的素材（%s）写了同一句 see「%s」：see 要按每一句各写各的" % ("、".join(sorted(_ps)), _see[:24]))
 _end = (dec.get("end") or {})
 if _end:
     _full = "".join(x["text"] for x in tc["sentences"])
@@ -413,10 +462,10 @@ def conform_extra(pick, t_in, need_s, W, H, name, fx=0.5, fy=0.5, extra=""):
     out = P(PUB, "clips", name + ".mp4")
     sig = json.dumps([sp, t_in, W, H, fx, fy, round(speed, 4), round(need_s, 3), look, fm])
     sig_p = out[:-4] + ".sig"
-    if not os.path.exists(out) or not os.path.exists(sig_p) or open(sig_p).read() != sig or not a.no_conform:
+    if not os.path.exists(out) or not os.path.exists(sig_p) or open(sig_p, encoding="utf-8").read() != sig or not a.no_conform:
         run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % t_in, "-i", sp, "-t", "%.3f" % (need_src + 0.1), "-filter_complex", fc]
             + encoder_args("high") + ["-an", "-r", "30", "-t", "%.3f" % need_s, out])
-        open(sig_p, "w").write(sig)
+        open(sig_p, "w", encoding="utf-8").write(sig)
     up = W / min(v["w"], v["h"] * W / H)
     if up > 1.6:
         warn.append("%s 素材 %dx%d 裁进 %dx%d 要放大 %.1f 倍会糊：换更高清的，或改用 band 画框条" % (name, v["w"], v["h"], W, H, up))
@@ -581,7 +630,7 @@ for k, s in enumerate(shots):
             BAND_Y = int(s.get("band_y", LAYOUT[STYLE].get("bandY", 560)))
             sig = json.dumps([sp, t_in, fit, fx, round(speed, 4), round(need_s, 3), look, frame_map, TW, TH, fy, BAND_Y])
             sig_p = out[:-4] + ".sig"
-            stale = not os.path.exists(out) or not os.path.exists(sig_p) or open(sig_p).read() != sig
+            stale = not os.path.exists(out) or not os.path.exists(sig_p) or open(sig_p, encoding="utf-8").read() != sig
             if stale or not a.no_conform:
                 # 先把时间基设成 1/30 再按帧号排时间戳：直接 setpts=N/(30*TB) 时时间基还是 1/25，时间戳被取整回 25fps 网格，
                 # 后面的 fps=30 又补出「每 6 帧重复 1 帧」（10-22 评审第 4 轮实测，第 2 轮那次修复其实没生效）
@@ -603,7 +652,7 @@ for k, s in enumerate(shots):
                           % (pts, cw, chh, cw, fx, chh, fy, TW, TH, look))
                 run(["ffmpeg", "-v", "error", "-y", "-ss", "%.3f" % t_in, "-i", sp, "-t", "%.3f" % (need_s * speed + 0.1),
                      "-filter_complex", fc] + encoder_args("high") + ["-an", "-r", "30", "-t", "%.3f" % need_s, out])
-                open(sig_p, "w").write(sig)
+                open(sig_p, "w", encoding="utf-8").write(sig)
             o["clip"] = "clips/%s.mp4" % s["id"]
             o["fit"] = fit
             if fit == "band":
@@ -1181,7 +1230,7 @@ if GATE or HARD:
     msg_ = ""
     if GATE:
         msg_ += "完整版表达层没达标（完整版不能比极简档少；对照 references/13 §4.2「她在说什么→用什么」，每句的建议处理见 work/beats.md）：\n  " + "\n  ".join(GATE) + \
-                "\n  某项这条片子确实用不上：decompose 写 \"waive\": {\"项名\": \"理由≥8字\"}（项名：gold／texts／layouts／inserts／info／why／tracker／doc）\n"
+                "\n  某项这条片子确实用不上：decompose 写 \"waive\": {\"项名\": \"理由≥8字\"}（项名：gold／texts／layouts／inserts／info／why／see／tracker／doc／reuse／plan）\n"
     if HARD:
         msg_ += "\n".join("· " + h for h in HARD) + "\n"
     if a.draft:
@@ -1236,7 +1285,7 @@ shutil.copy(os.path.join(SKILL, "assets", "fonts", "BodoniModa.ttf"), P(PUB, "fo
 import base64
 fd = {k: base64.b64encode(open(P(PUB, "fonts", f), "rb").read()).decode()
       for k, f in [("SHSerif-Heavy", "SHSerif-Heavy.otf"), ("SHSerif-SemiBold", "SHSerif-SemiBold.otf"), ("BodoniModa", "BodoniModa.ttf")]}
-open(P(R, "src", "fontdata.ts"), "w").write("export const FONT_DATA: Record<string, string> = " + json.dumps(fd) + ";\n")
+open(P(R, "src", "fontdata.ts"), "w", encoding="utf-8").write("export const FONT_DATA: Record<string, string> = " + json.dumps(fd) + ";\n")
 grain = P(PUB, "grain.png")
 if not os.path.exists(grain):
     from PIL import Image
